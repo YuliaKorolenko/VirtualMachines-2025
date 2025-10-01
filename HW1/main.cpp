@@ -2,6 +2,9 @@
 #include <iostream>
 #include <random>
 #include <unistd.h>
+#include <chrono>
+#include <vector>
+#include <algorithm>
 using namespace std;
 
 long double measure_access_time(size_t H, size_t S) {
