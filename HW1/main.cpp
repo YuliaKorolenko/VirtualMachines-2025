@@ -5,63 +5,114 @@
 #include <chrono>
 #include <vector>
 #include <algorithm>
+#include <map>
+
 using namespace std;
 
+const int ITERATIONS = 100000;
+
 long double measure_access_time(size_t H, size_t S) {
-    H /= sizeof(int);
     const size_t total_elements = H * S;
 
-    int* buffer = (int*)(std::aligned_alloc(128, total_elements * sizeof(int)));
+    void **buffer = (void **) std::aligned_alloc(128, total_elements * sizeof(void *));
+
     for (int i = 0; i < S; ++i) {
-        buffer[i * H] = i * H - H;
+        buffer[i * H] = (void *) &buffer[i * H - H];
     }
-    buffer[0] = total_elements - H;
+    buffer[0] = (void *) &buffer[total_elements - H];
 
-    int k = 0;
-    int num_iterations = 10000000;
+    const void *p = buffer;
 
-    for (int j = 0; j < num_iterations; ++j) {
+    for (int j = 0; j < ITERATIONS; ++j) {
         for (int i = 0; i < S; ++i) {
-            k = buffer[k];
+            p = *(const void **) p;
         }
     }
 
-    k = 0;
     auto start = std::chrono::steady_clock::now();
-    for (int j = 0; j < num_iterations; ++j) {
+    for (int j = 0; j < ITERATIONS; ++j) {
         for (long long i = 0; i < S; ++i) {
-            k = buffer[k];
+            p = *(const void **) p;
         }
     }
+    fprintf(stdin, "%p", p);
     auto end = std::chrono::steady_clock::now();
 
-    delete[] buffer;
+    std::free(buffer);
 
     auto duration_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
-    return duration_ns.count() / static_cast<long double>(num_iterations * S);
+    return duration_ns.count() / static_cast<long double>(ITERATIONS * S);
+}
+
+bool isMovement(const map<long long, std::pair<long long, long double> > &jumps_maps, long long H) {
+    if (jumps_maps.size() < 2) {
+        return true;
+    }
+    auto current = jumps_maps.find(H);
+    if (current == jumps_maps.end()) {
+        return true;
+    }
+
+    H = H / 2;
+    if (H < 16) {
+        return true;
+    }
+    auto prev = jumps_maps.find(H);
+    if (prev == jumps_maps.end()) {
+        return true;
+    }
+
+    if (prev->second.first == current->second.first) {
+        return false;
+    }
+
+    return true;
 }
 
 int get_associativity() {
-    const size_t H = 512 * 1024;
+    map<long long, std::pair<long long, long double> > jumps_map;
 
-    int prev_time = 0;
-    for (size_t s = 1; s <= 24; s += 1) {
+    int MAX_ASSOCIATIVITY = 50;
+    long long MAX_MEMORY = 1024 * 1024 * 1024;
+    long long H = 16;
 
-        long double time = measure_access_time(H, s);
-
-
-        if (prev_time != 0 && prev_time * 2 <= time) {
-            cout << "Associativity: " << s - 1 << "\n";
+    long double prev_time = 0;
+    while (H * MAX_ASSOCIATIVITY < MAX_MEMORY) {
+        long long S = 1;
+        while (S < MAX_ASSOCIATIVITY) {
+            long double current_time = measure_access_time(H, S);
+            long double jump = current_time / prev_time;
+            if (prev_time != 0 && current_time / prev_time > 1.9) {
+                // std::cout << "Stride H: " << H
+                //         << ", Count elements S: " << S
+                //         << ", Jump: " << jump << std::endl;
+                jumps_map[H] = make_pair(S, jump);
+            }
+            S += 1;
+            prev_time = current_time;
+        }
+        if (isMovement(jumps_map, H)) {
+            H = H * 2;
+        } else {
             break;
         }
-        prev_time = time;
-        // std::cout << std::left << std::setw(12) << s
-        //           << std::setw(10) << time << "\n";
     }
+    if (jumps_map.size() < 2) {
+        cout << " Problem: too small jumps ";
+        return -1;
+    }
+
+    auto current = jumps_map.find(H);
+    if (current == jumps_map.end()) {
+        cout << "Mistake: last H doesn't have jump";
+        return -1;
+    }
+    cout << "Associativity: " << current->second.first << endl;
 }
 
 
 int get_cache_line_size() {
+    std::vector<long double> timings_cache;
     constexpr size_t ARRAY_SIZE = 128 * 1024 * 1024;
     constexpr int MAX_STRIDE_KB = 128;
 
@@ -72,15 +123,17 @@ int get_cache_line_size() {
     long double avg_time_prev = 0;
     for (int stride = 1; stride <= MAX_STRIDE_KB * 4; stride += 1) {
         // warm - up
+        char temp;
         for (long long i = 0; i < 100; ++i) {
-            char temp = data[(i * stride) & (ARRAY_SIZE - 1)];
+            temp = data[(i * stride) & (ARRAY_SIZE - 1)];
         }
 
         auto start_time = std::chrono::high_resolution_clock::now();
 
         for (long long i = 0; i < 1000000; ++i) {
-            char temp = data[(i * stride) & (ARRAY_SIZE - 1)];
+            temp = data[(i * stride) & (ARRAY_SIZE - 1)];
         }
+        fprintf(stdin, "%d", temp);
 
         auto end_time = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time);
@@ -90,7 +143,7 @@ int get_cache_line_size() {
             break;
         }
         avg_time_prev = duration.count();
-        // std::cout << stride << "\t\t" << duration.count() / 1000000.0 << std::endl;
+        std::cout << stride << "\t\t" << duration.count() / 1000000.0 << std::endl;
     }
 
     return 0;
@@ -103,23 +156,23 @@ int get_cache_size() {
 
     long double prev_time = 0;
     for (long long size_kb = min_size_kb; size_kb <= max_size_kb; size_kb *= 2) {
-
         long long array_size_bytes = size_kb * 1024;
         long long total_elements = array_size_bytes / sizeof(int);
 
-        int* buffer = (int*)(std::aligned_alloc(128, array_size_bytes));
+        int *buffer = (int *) (std::aligned_alloc(128, array_size_bytes));
         int step = 1; // cache_line_size / sizeof(int);
         for (int i = 0; i < total_elements; ++i) {
             buffer[i] = i;
         }
 
         std::shuffle(&buffer[0], &buffer[total_elements - 1],
-             std::default_random_engine(std::chrono::steady_clock::now().time_since_epoch().count()));
+                     std::default_random_engine(std::chrono::steady_clock::now().time_since_epoch().count()));
 
         int k = 0;
         for (int j = 0; j < REPEAT; ++j) {
             for (int i = 0; i < total_elements; i += step) {
                 k = buffer[k];
+                fprintf(stdin, "%d", k);
             }
         }
 
@@ -139,19 +192,20 @@ int get_cache_size() {
 
         delete[] buffer;
 
-        long double cur_time = (long double)duration.count() / (REPEAT * total_elements / step);
+        long double cur_time = (long double) duration.count() / (REPEAT * total_elements / step);
         if (prev_time != 0 && prev_time * 1.8 <= cur_time) {
             std::cout << "Cache (kb): " << size_kb / 2 << endl;
             break;
         }
         prev_time = cur_time;
-        // std::cout << "Cache size: " << size_kb << " Duration: "  << (long double)duration.count() / (REPEAT * total_elements / step)  << "\n";
+        std::cout << "Cache size: " << size_kb << " Duration: " << (long double) duration.count() / (
+            REPEAT * total_elements / step) << "\n";
     }
 }
 
 
 int main() {
     get_associativity();
-    get_cache_line_size();
-    get_cache_size();
+    // get_cache_line_size();
+    // get_cache_size();
 }

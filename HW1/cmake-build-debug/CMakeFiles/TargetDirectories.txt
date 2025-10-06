@@ -1,0 +1,3 @@
+/Users/yuliyakaralenka/Desktop/masterbremen/3sem/VirtualMachines-2025/HW1/cmake-build-debug/CMakeFiles/HW1.dir
+/Users/yuliyakaralenka/Desktop/masterbremen/3sem/VirtualMachines-2025/HW1/cmake-build-debug/CMakeFiles/edit_cache.dir
+/Users/yuliyakaralenka/Desktop/masterbremen/3sem/VirtualMachines-2025/HW1/cmake-build-debug/CMakeFiles/rebuild_cache.dir
