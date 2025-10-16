@@ -6,17 +6,20 @@
 #include <vector>
 #include <algorithm>
 #include <map>
+#include <algorithm> 
 
 using namespace std;
 
-const int ITERATIONS = 100000;
+const int ITERATIONS = 300000;
+const long long MAX_MEMORY = 1024 * 1024 * 1024;
+
+void **buffer;
+constexpr unsigned int REPEATS = 100000;
 
 long double measure_access_time(size_t H, size_t S) {
     const size_t total_elements = H * S;
 
-    void **buffer = (void **) std::aligned_alloc(128, total_elements * sizeof(void *));
-
-    for (int i = 0; i < S; ++i) {
+    for (int i = 1; i < S; ++i) {
         buffer[i * H] = (void *) &buffer[i * H - H];
     }
     buffer[0] = (void *) &buffer[total_elements - H];
@@ -24,24 +27,18 @@ long double measure_access_time(size_t H, size_t S) {
     const void *p = buffer;
 
     for (int j = 0; j < ITERATIONS; ++j) {
-        for (int i = 0; i < S; ++i) {
-            p = *(const void **) p;
-        }
+        p = *(const void **) p;
     }
 
-    auto start = std::chrono::steady_clock::now();
+    auto start = std::chrono::high_resolution_clock::now();
     for (int j = 0; j < ITERATIONS; ++j) {
-        for (long long i = 0; i < S; ++i) {
-            p = *(const void **) p;
-        }
+        p = *(const void **) p;
     }
-    fprintf(stdin, "%p", p);
-    auto end = std::chrono::steady_clock::now();
+    auto end = std::chrono::high_resolution_clock::now();
 
-    std::free(buffer);
 
     auto duration_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
-    return duration_ns.count() / static_cast<long double>(ITERATIONS * S);
+    return duration_ns.count() / static_cast<long double>(ITERATIONS);
 }
 
 bool isMovement(const map<long long, std::pair<long long, long double> > &jumps_maps, long long H) {
@@ -73,19 +70,20 @@ int get_associativity() {
     map<long long, std::pair<long long, long double> > jumps_map;
 
     int MAX_ASSOCIATIVITY = 50;
-    long long MAX_MEMORY = 1024 * 1024 * 1024;
     long long H = 16;
 
     long double prev_time = 0;
-    while (H * MAX_ASSOCIATIVITY < MAX_MEMORY) {
+    while (H * MAX_ASSOCIATIVITY * sizeof(void*) < MAX_MEMORY) {
         long long S = 1;
         while (S < MAX_ASSOCIATIVITY) {
             long double current_time = measure_access_time(H, S);
             long double jump = current_time / prev_time;
             if (prev_time != 0 && current_time / prev_time > 1.9) {
-                // std::cout << "Stride H: " << H
-                //         << ", Count elements S: " << S
-                //         << ", Jump: " << jump << std::endl;
+                std::cout << "Stride H: " << H
+                        << ", Count elements S: " << S
+                        << ", Jump: " << jump
+                        << ", Current time: " << current_time
+                        << std::endl;
                 jumps_map[H] = make_pair(S, jump);
             }
             S += 1;
@@ -93,6 +91,7 @@ int get_associativity() {
         }
         if (isMovement(jumps_map, H)) {
             H = H * 2;
+            prev_time = 0;
         } else {
             break;
         }
@@ -108,8 +107,19 @@ int get_associativity() {
         return -1;
     }
     cout << "Associativity: " << current->second.first << endl;
+    return -1;
 }
 
+void get_associativity_1() {
+    int H = 128;
+    for (int i = 3; i < 100; ++i) {
+        long double current_time = measure_access_time(H, i);
+        std::cout << "Stride H: " << H
+                << ", Count elements S: " << i
+                << ", Current time: " << current_time * 100
+                << std::endl;
+    }
+}
 
 int get_cache_line_size() {
     std::vector<long double> timings_cache;
@@ -205,7 +215,9 @@ int get_cache_size() {
 
 
 int main() {
+    buffer = (void **) std::aligned_alloc(4096, MAX_MEMORY);
     get_associativity();
+    free(buffer);
     // get_cache_line_size();
     // get_cache_size();
 }
