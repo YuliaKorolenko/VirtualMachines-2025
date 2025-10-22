@@ -5,7 +5,9 @@
 #include <errno.h>
 #include <iostream>
 #include <stdlib.h>
-#include <vector>
+
+#include "machine_state.h"
+#include "operation.h"
 
 void *__start_custom_data;
 void *__stop_custom_data;
@@ -78,30 +80,15 @@ bytefile *read_file(char *fname) {
     return file;
 }
 
-class Locals {
-public:
-    std::vector<size_t> vars;
-
-    Locals(size_t n) : vars(n, -1) {}
-    Locals() = default;
-};
-
-typedef struct {
-    Locals locals;
-} MachineState;
-
-
 /* Disassembles the bytecode pool */
 void disassemble(FILE *f, bytefile *bf) {
-#define INT (ip += sizeof(int), *(int *)(ip - sizeof(int)))
-#define BYTE *ip++
+#define INT (ms.ip += sizeof(int), *(int *)(ms.ip - sizeof(int)))
+#define BYTE *(ms.ip)++
 #define STRING get_string(bf, INT)
 #define FAIL do { fprintf(stderr, "ERROR: invalid opcode %d-%d\n", h, l); exit(EXIT_FAILURE); } while(0)
 
 
-    MachineState ms = MachineState();
-    char *ip = bf->code_ptr;
-    char *ops[] = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
+    MachineState ms = MachineState(bf->code_ptr);
     char *pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
     char *lds[] = {"LD", "LDA", "ST"};
     do {
@@ -109,21 +96,20 @@ void disassemble(FILE *f, bytefile *bf) {
                 h = (x & 0xF0) >> 4,
                 l = x & 0x0F;
 
-        fprintf(f, "0x%.8x:\t", ip - bf->code_ptr - 1);
-
+        fprintf(f, "0x%.8x:\t", ms.ip - bf->code_ptr - 1);
         switch (h) {
             case 15:
                 goto stop;
 
             /* BINOP */
             case 0:
-                fprintf(f, "BINOP\t%s", ops[l - 1]);
+                BINOP_execute(f, ms, l);
                 break;
 
             case 1:
                 switch (l) {
                     case 0:
-                        fprintf(f, "CONST\t%d", INT);
+                        CONST_execute(f, ms);
                         break;
 
                     case 1:
@@ -156,7 +142,7 @@ void disassemble(FILE *f, bytefile *bf) {
                         break;
 
                     case 8:
-                        fprintf(f, "DROP");
+                        DROP_execute(f, ms);
                         break;
 
                     case 9:
@@ -182,7 +168,13 @@ void disassemble(FILE *f, bytefile *bf) {
                 fprintf(f, "%s\t", lds[h - 2]);
                 switch (l) {
                     case 0:
-                        fprintf(f, "G(%d)", INT);
+                        if (h == 4) {
+                            STORE_G_execute(f, ms);
+                        } else if (h == 2) {
+                            LD_G_execute(f, ms);
+                        } else {
+                            fprintf(f, "G(%d)", INT);
+                        }
                         break;
                     case 1:
                         fprintf(f, "L(%d)", INT);
@@ -209,14 +201,8 @@ void disassemble(FILE *f, bytefile *bf) {
                         break;
 
                     case 2:
-                        // что значит первый int?
-                        // int first_int = INT;
-                        fprintf(f, "BEGIN\t%d ", INT);
-                        fprintf(f, "%d", INT);
-                        ms.locals = Locals(2);
-                        std::cout << "Locals" << ms.locals.vars.size();
+                        BEGIN_execute(f, ms);
                         break;
-
                     case 3:
                         fprintf(f, "CBEGIN\t%d ", INT);
                         fprintf(f, "%d", INT);
@@ -270,7 +256,7 @@ void disassemble(FILE *f, bytefile *bf) {
                         break;
 
                     case 10:
-                        fprintf(f, "LINE\t%d", INT);
+                        fprintf(f, "LINE\t%d", ms.read_next_int());
                         break;
 
                     default:
@@ -289,7 +275,7 @@ void disassemble(FILE *f, bytefile *bf) {
                         break;
 
                     case 1:
-                        fprintf(f, "CALL\tLwrite");
+                        CALL_execute(f, ms);
                         break;
 
                     case 2:
