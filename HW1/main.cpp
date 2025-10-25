@@ -222,7 +222,7 @@ void analyze_trend(const vector<ResultType> &trend) {
     }
 }
 
-int detect_block_size() {
+void detect_block_size() {
     int H = 16;
 
     vector<ResultType> trend(log(MAX_MEMORY), ResultType::PATTERN_Z_UNKNOWN);
