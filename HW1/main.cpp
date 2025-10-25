@@ -5,8 +5,8 @@
 #include <chrono>
 #include <vector>
 #include <algorithm>
+#include <fstream>
 #include <map>
-#include <algorithm>
 
 using namespace std;
 
@@ -14,7 +14,9 @@ const int ITERATIONS = 300000;
 const long long MAX_MEMORY = 1024 * 1024 * 1024;
 
 void **buffer;
-constexpr unsigned int REPEATS = 100000;
+constexpr double JUMP = 1.9;
+std::ofstream outFile;
+
 
 long double measure_access_time(size_t H, size_t S) {
     const size_t total_elements = H * S;
@@ -81,8 +83,8 @@ int get_associativity() {
         while (S < MAX_ASSOCIATIVITY) {
             long double current_time = measure_access_time(H, S);
             long double jump = current_time / prev_time;
-            if (prev_time != 0 && current_time / prev_time > 1.9) {
-                std::cout << "Stride H: " << H
+            if (prev_time != 0 && jump > JUMP) {
+                outFile << "Stride H: " << H
                         << ", Count elements S: " << S
                         << ", Jump: " << jump
                         << ", Current time: " << current_time
@@ -117,111 +119,144 @@ void get_associativity_1() {
     int H = 128;
     for (int i = 3; i < 100; ++i) {
         long double current_time = measure_access_time(H, i);
-        std::cout << "Stride H: " << H
+        outFile << "Stride H: " << H
                 << ", Count elements S: " << i
                 << ", Current time: " << current_time * 100
                 << std::endl;
     }
 }
 
-int get_cache_line_size() {
-    std::vector<long double> timings_cache;
-    constexpr size_t ARRAY_SIZE = 128 * 1024 * 1024;
-    constexpr int MAX_STRIDE_KB = 128;
 
-    std::vector<char> data(ARRAY_SIZE);
-    std::fill(data.begin(), data.end(), 1);
-
-
-    long double avg_time_prev = 0;
-    for (int stride = 1; stride <= MAX_STRIDE_KB * 4; stride += 1) {
-        // warm - up
-        char temp;
-        for (long long i = 0; i < 100; ++i) {
-            temp = data[(i * stride) & (ARRAY_SIZE - 1)];
-        }
-
-        auto start_time = std::chrono::high_resolution_clock::now();
-
-        for (long long i = 0; i < 1000000; ++i) {
-            temp = data[(i * stride) & (ARRAY_SIZE - 1)];
-        }
-        fprintf(stdin, "%d", temp);
-
-        auto end_time = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time);
-
-        if (avg_time_prev != 0 && avg_time_prev * 2 <= duration.count()) {
-            std::cout << "Cache line size (b) : " << stride << "\n";
-            break;
-        }
-        avg_time_prev = duration.count();
-        std::cout << stride << "\t\t" << duration.count() / 1000000.0 << std::endl;
-    }
-
-    return 0;
-}
-
-int get_cache_size() {
-    constexpr int REPEAT = 1000;
-    const int min_size_kb = 16;
-    const int max_size_kb = 1024 * 2;
-
+int find_spots(int H) {
     long double prev_time = 0;
-    for (long long size_kb = min_size_kb; size_kb <= max_size_kb; size_kb *= 2) {
-        long long array_size_bytes = size_kb * 1024;
-        long long total_elements = array_size_bytes / sizeof(int);
+    long double cur_time = 0;
 
-        int *buffer = (int *) (std::aligned_alloc(128, array_size_bytes));
-        int step = 1; // cache_line_size / sizeof(int);
-        for (int i = 0; i < total_elements; ++i) {
-            buffer[i] = i;
-        }
-
-        std::shuffle(&buffer[0], &buffer[total_elements - 1],
-                     std::default_random_engine(std::chrono::steady_clock::now().time_since_epoch().count()));
-
-        int k = 0;
-        for (int j = 0; j < REPEAT; ++j) {
-            for (int i = 0; i < total_elements; i += step) {
-                k = buffer[k];
-                fprintf(stdin, "%d", k);
-            }
-        }
-
-        int num_iterations = total_elements / step;
-        auto start_time = std::chrono::high_resolution_clock::now();
-
-        k = 0;
-
-        for (int j = 0; j < REPEAT; ++j) {
-            for (int i = 0; i < num_iterations; i++) {
-                k = buffer[k];
-            }
-        }
-
-        auto end_time = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time);
-
-        delete[] buffer;
-
-        long double cur_time = (long double) duration.count() / (REPEAT * total_elements / step);
-        if (prev_time != 0 && prev_time * 1.8 <= cur_time) {
-            std::cout << "Cache (kb): " << size_kb / 2 << endl;
-            break;
+    for (int i = 1; i < (MAX_MEMORY / 8) / H; i = i * 2) {
+        cur_time = measure_access_time(H, i);
+        long double jump = cur_time / prev_time;
+        if (prev_time != 0 && jump > JUMP) {
+            return i;
         }
         prev_time = cur_time;
-        std::cout << "Cache size: " << size_kb << " Duration: " << (long double) duration.count() / (
-            REPEAT * total_elements / step) << "\n";
+    }
+
+    return -1;
+}
+
+enum class ResultType {
+    PATTERN_S_DECREASE, // 'S'
+    PATTERN_D_INCREASE, // 'D'
+    PATTERN_F_ASSOCIATIVE, // 'F'
+    PATTERN_Z_UNKNOWN // 'Z' (Никто не набрал > 50%)
+};
+
+char resultToChar(ResultType result) {
+    switch (result) {
+        case ResultType::PATTERN_S_DECREASE: return 'D';
+        case ResultType::PATTERN_D_INCREASE: return 'I';
+        case ResultType::PATTERN_F_ASSOCIATIVE: return 'A';
+        case ResultType::PATTERN_Z_UNKNOWN: return 'Z';
+        default: return '?';
     }
 }
 
+ResultType confidence_result(int H) {
+    int base = find_spots(H);
+    outFile << endl << "H: " << H << " base: " << base << endl;
+    if (base == -1) {
+        return ResultType::PATTERN_Z_UNKNOWN;
+    }
+
+    int decrease = 0;
+    int increase = 0;
+    int associative = 0;
+    int test_count = 0;
+    int L = H / 2;
+    while (L > 1 && test_count < 4) {
+        test_count++;
+        int test = find_spots(H + L);
+        outFile << "test_count_" << test_count << ": " << test << endl;
+        if (test == -1) {
+            continue;
+        }
+        if (test < base) {
+            decrease++;
+        } else if (test > decrease) {
+            increase++;
+        } else {
+            associative++;
+        }
+        L = L / 2;
+    }
+
+    outFile << " decrease: " << decrease << " increase: " << increase << " associative: " << associative <<
+            endl;
+    if (decrease > test_count / 2) {
+        return ResultType::PATTERN_S_DECREASE;
+    }
+    if (increase > test_count / 2) {
+        return ResultType::PATTERN_D_INCREASE;
+    }
+    if (associative > test_count / 2) {
+        return ResultType::PATTERN_F_ASSOCIATIVE;
+    }
+    return ResultType::PATTERN_Z_UNKNOWN;
+}
+
+void analyze_trend(const vector<ResultType> &trend) {
+    bool is_first = true;
+    for (size_t i = 0; i < trend.size() - 1; ++i) {
+        if ((trend[i] == ResultType::PATTERN_S_DECREASE || trend[i] == ResultType::PATTERN_D_INCREASE) &&
+            trend[i + 1] == ResultType::PATTERN_D_INCREASE) {
+            size_t index_of_D = i + 1;
+            int block_size = 1 << (index_of_D + 1);
+
+            if (is_first) {
+                cout << "Cache Line size: " << block_size << "." << endl;
+                is_first = false;
+            } else {
+                cout << "Cache size: " << block_size << "." << endl;
+                return;
+            }
+        }
+    }
+}
+
+int detect_block_size() {
+    int H = 16;
+
+    vector<ResultType> trend(log(MAX_MEMORY), ResultType::PATTERN_Z_UNKNOWN);
+
+    while (H < MAX_MEMORY / 8) {
+        ResultType result = confidence_result(H);
+        auto log_2_H = log(H);
+        trend[log_2_H] = result;
+        H = H * 2;
+    }
+
+    outFile << " Trend: " << endl;
+    for (int i = 0; i < trend.size(); ++i) {
+        outFile << resultToChar(trend[i]) << " ";
+    }
+
+    analyze_trend(trend);
+}
 
 int main() {
+    std::string filename = "hw_1_log.log";
+    outFile.open(filename, std::ios::app);
+    if (outFile.is_open()) {
+        std::filesystem::path full_path = std::filesystem::absolute(filename);
+        std::cout << "File for logs was created: " << full_path.string() << std::endl;
+    }
+
+
     buffer = (void **) std::aligned_alloc(4096, MAX_MEMORY);
+    outFile << " get_associativity_1 " << std::endl;
     get_associativity_1();
+    outFile << " get_associativity " << std::endl;
     get_associativity();
+    outFile << " detect_block_size " << std::endl;
+    detect_block_size();
     free(buffer);
-    // get_cache_line_size();
-    // get_cache_size();
 }
