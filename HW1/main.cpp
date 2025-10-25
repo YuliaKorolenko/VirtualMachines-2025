@@ -6,7 +6,7 @@
 #include <vector>
 #include <algorithm>
 #include <map>
-#include <algorithm> 
+#include <algorithm>
 
 using namespace std;
 
@@ -29,12 +29,15 @@ long double measure_access_time(size_t H, size_t S) {
     for (int j = 0; j < ITERATIONS; ++j) {
         p = *(const void **) p;
     }
+    fprintf(stdin, "%p", p);
 
+    p = buffer;
     auto start = std::chrono::high_resolution_clock::now();
     for (int j = 0; j < ITERATIONS; ++j) {
         p = *(const void **) p;
     }
     auto end = std::chrono::high_resolution_clock::now();
+    fprintf(stdin, "%p", p);
 
 
     auto duration_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
@@ -73,7 +76,7 @@ int get_associativity() {
     long long H = 16;
 
     long double prev_time = 0;
-    while (H * MAX_ASSOCIATIVITY * sizeof(void*) < MAX_MEMORY) {
+    while (H * MAX_ASSOCIATIVITY * sizeof(void *) < MAX_MEMORY) {
         long long S = 1;
         while (S < MAX_ASSOCIATIVITY) {
             long double current_time = measure_access_time(H, S);
@@ -106,7 +109,7 @@ int get_associativity() {
         cout << "Mistake: last H doesn't have jump";
         return -1;
     }
-    cout << "Associativity: " << current->second.first << endl;
+    cout << "Associativity: " << current->second.first - 1 << endl;
     return -1;
 }
 
@@ -216,6 +219,7 @@ int get_cache_size() {
 
 int main() {
     buffer = (void **) std::aligned_alloc(4096, MAX_MEMORY);
+    get_associativity_1();
     get_associativity();
     free(buffer);
     // get_cache_line_size();
