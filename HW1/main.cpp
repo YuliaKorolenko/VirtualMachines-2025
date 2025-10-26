@@ -83,7 +83,7 @@ int get_associativity() {
     return -1;
 }
 
-void get_associativity_1() {
+void create_table() {
     std::string filename = "timing_table.csv";
     std::ofstream csvTable(filename);
     if (!csvTable.is_open()) {
@@ -160,8 +160,9 @@ ResultType confidence_result(int H) {
     int increase = 0;
     int associative = 0;
     int test_count_cur = 0;
-    int L = H / 2;
-    while (L > 1 && test_count_cur < TEST_COUNT) {
+    int helper = H / 2;
+    int L = helper;
+    while (L >= 1 && test_count_cur < TEST_COUNT) {
         test_count_cur++;
         int test = find_spots(H + L);
         outFile << "test_count_" << test_count_cur << ": " << test << endl;
@@ -175,7 +176,8 @@ ResultType confidence_result(int H) {
         } else if (test == base) {
             associative++;
         }
-        L = L / 2;
+        helper = helper / 2;
+        L += helper;
     }
 
     outFile << " decrease: " << decrease << " increase: " << increase << " associative: " << associative <<
@@ -242,7 +244,7 @@ int main() {
 
 
     buffer = (void **) std::aligned_alloc(4096, MAX_MEMORY);
-    get_associativity_1();
+    create_table();
     outFile << " get_associativity " << std::endl;
     get_associativity();
     outFile << " detect_block_size " << std::endl;
