@@ -10,12 +10,14 @@
 
 using namespace std;
 
-const int ITERATIONS = 300000;
+const int ITERATIONS = 500000;
 const long long MAX_MEMORY = 1024 * 1024 * 1024;
+const int TEST_COUNT = 4;
 
 void **buffer;
 constexpr double JUMP = 1.9;
 std::ofstream outFile;
+std::ofstream csvTable;
 
 
 long double measure_access_time(size_t H, size_t S) {
@@ -46,31 +48,6 @@ long double measure_access_time(size_t H, size_t S) {
     return duration_ns.count() / static_cast<long double>(ITERATIONS);
 }
 
-bool isMovement(const map<long long, std::pair<long long, long double> > &jumps_maps, long long H) {
-    if (jumps_maps.size() < 2) {
-        return true;
-    }
-    auto current = jumps_maps.find(H);
-    if (current == jumps_maps.end()) {
-        return true;
-    }
-
-    H = H / 2;
-    if (H < 16) {
-        return true;
-    }
-    auto prev = jumps_maps.find(H);
-    if (prev == jumps_maps.end()) {
-        return true;
-    }
-
-    if (prev->second.first == current->second.first) {
-        return false;
-    }
-
-    return true;
-}
-
 int get_associativity() {
     map<long long, std::pair<long long, long double> > jumps_map;
 
@@ -78,6 +55,7 @@ int get_associativity() {
     long long H = 16;
 
     long double prev_time = 0;
+    long double last_H_with_jump = 0;
     while (H * MAX_ASSOCIATIVITY * sizeof(void *) < MAX_MEMORY) {
         long long S = 1;
         while (S < MAX_ASSOCIATIVITY) {
@@ -90,40 +68,47 @@ int get_associativity() {
                         << ", Current time: " << current_time
                         << std::endl;
                 jumps_map[H] = make_pair(S, jump);
+                last_H_with_jump = H;
             }
             S += 1;
             prev_time = current_time;
         }
-        if (isMovement(jumps_map, H)) {
-            H = H * 2;
-            prev_time = 0;
-        } else {
-            break;
-        }
-    }
-    if (jumps_map.size() < 2) {
-        cout << " Problem: too small jumps ";
-        return -1;
+        H = H * 2;
     }
 
-    auto current = jumps_map.find(H);
-    if (current == jumps_map.end()) {
-        cout << "Mistake: last H doesn't have jump";
-        return -1;
-    }
+    auto current = jumps_map.find(last_H_with_jump);
     cout << "Associativity: " << current->second.first - 1 << endl;
     return -1;
 }
 
 void get_associativity_1() {
-    int H = 128;
-    for (int i = 3; i < 100; ++i) {
-        long double current_time = measure_access_time(H, i);
-        outFile << "Stride H: " << H
-                << ", Count elements S: " << i
-                << ", Current time: " << current_time * 100
-                << std::endl;
+    std::string filename = "timing_table.csv";
+    std::ofstream csvTable(filename);
+    if (!csvTable.is_open()) {
+        std::cerr << "Error: Failed to create file '" << filename << "'." << std::endl;
+        return;
     }
+    csvTable << "H\\S"; // First cell
+    for (int s = 1; s <= 30; ++s) {
+        csvTable << "," << s;
+    }
+    csvTable << "\n";
+
+
+    for (int H = 16; H * sizeof(void *) <= MAX_MEMORY; H *= 2) {
+        csvTable << H;
+        for (int S = 1; S < 30; ++S) {
+            if (H * sizeof(void *) * S < MAX_MEMORY) {
+                long double current_time = measure_access_time(H, S);
+                csvTable << "," << static_cast<long long>(std::round(current_time * 100));
+            } else {
+                csvTable << "," << -1;
+            }
+        }
+        csvTable << "\n";
+    }
+    csvTable.close();
+    std::cout << "File '" << filename << "' created successfully." << std::endl;
 }
 
 
@@ -191,13 +176,13 @@ ResultType confidence_result(int H) {
 
     outFile << " decrease: " << decrease << " increase: " << increase << " associative: " << associative <<
             endl;
-    if (decrease > test_count / 2) {
+    if (decrease > TEST_COUNT / 2) {
         return ResultType::PATTERN_S_DECREASE;
     }
-    if (increase > test_count / 2) {
+    if (increase > TEST_COUNT / 2) {
         return ResultType::PATTERN_D_INCREASE;
     }
-    if (associative > test_count / 2) {
+    if (associative > TEST_COUNT / 2) {
         return ResultType::PATTERN_F_ASSOCIATIVE;
     }
     return ResultType::PATTERN_Z_UNKNOWN;
@@ -212,10 +197,10 @@ void analyze_trend(const vector<ResultType> &trend) {
             int block_size = 1 << (index_of_D + 1);
 
             if (is_first) {
-                cout << "Cache Line size: " << block_size << "." << endl;
+                cout << "Cache Line size: " << block_size * 8 << "b." << endl;
                 is_first = false;
             } else {
-                cout << "Cache size: " << block_size << "." << endl;
+                cout << "Cache size: " << block_size << "kb." << endl;
                 return;
             }
         }
@@ -252,7 +237,6 @@ int main() {
 
 
     buffer = (void **) std::aligned_alloc(4096, MAX_MEMORY);
-    outFile << " get_associativity_1 " << std::endl;
     get_associativity_1();
     outFile << " get_associativity " << std::endl;
     get_associativity();
