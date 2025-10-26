@@ -9,6 +9,19 @@
 #include <map>
 #include <filesystem>
 #include <cmath>
+#include <ranges>
+
+
+#ifdef __APPLE__
+#include <mach/mach.h>
+
+bool pin_to_core_minimal_macos(int core_id) {
+    thread_affinity_policy_data_t policy = {core_id};
+    return thread_policy_set(mach_thread_self(), THREAD_AFFINITY_POLICY, (thread_policy_t) &policy,
+                             THREAD_AFFINITY_POLICY_COUNT) == KERN_SUCCESS;
+}
+
+#endif
 
 using namespace std;
 
@@ -50,14 +63,41 @@ long double measure_access_time(size_t H, size_t S) {
     return duration_ns.count() / static_cast<long double>(ITERATIONS);
 }
 
+bool isMovement(const map<long long, std::vector<std::pair<long long, long double> > > &jumps_maps, long long H) {
+    if (jumps_maps.size() < 2) {
+        return true;
+    }
+    auto current = jumps_maps.find(H);
+    if (current == jumps_maps.end()) {
+        return true;
+    }
+
+    H = H / 2;
+    if (H < 16) {
+        return true;
+    }
+    auto prev = jumps_maps.find(H);
+    if (prev == jumps_maps.end()) {
+        return true;
+    }
+
+    const long long min_s_c = current->second[0].first;
+    for (const auto key: prev->second | views::keys) {
+        if (key == min_s_c) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 int get_associativity() {
-    map<long long, std::pair<long long, long double> > jumps_map;
+    map<long long, std::vector<std::pair<long long, long double> > > jumps_map;
 
     int MAX_ASSOCIATIVITY = 50;
     long long H = 1;
 
     long double prev_time = 0;
-    long double last_H_with_jump = 0;
     while (H * MAX_ASSOCIATIVITY * sizeof(void *) < MAX_MEMORY) {
         long long S = 1;
         while (S < MAX_ASSOCIATIVITY) {
@@ -69,18 +109,50 @@ int get_associativity() {
                         << ", Jump: " << jump
                         << ", Current time: " << current_time
                         << std::endl;
-                jumps_map[H] = make_pair(S, jump);
-                last_H_with_jump = H;
+                jumps_map[H].emplace_back(S, jump);
             }
             S += 1;
             prev_time = current_time;
         }
-        H = H * 2;
+        if (isMovement(jumps_map, H)) {
+            H = H * 2;
+            prev_time = 0;
+        } else {
+            break;
+        }
     }
 
-    auto current = jumps_map.find(last_H_with_jump);
-    cout << "Associativity: " << current->second.first - 1 << endl;
-    outFile << "Associativity: " << current->second.first - 1 << endl;
+
+    auto current_min_s = jumps_map.find(H)->second[0].first;
+    H = H / 2;
+    auto first_small_S_H = H;
+    while (H >= 16) {
+        auto map_iterator = jumps_map.find(H);
+
+        if (map_iterator != jumps_map.end()) {
+            const auto &s_jump_pairs = map_iterator->second;
+
+            bool found_s = false;
+            for (const auto &pair: s_jump_pairs) {
+                if (pair.first == current_min_s) {
+                    found_s = true;
+                    break;
+                }
+            }
+
+            if (found_s) {
+                first_small_S_H = H;
+            }
+        }
+
+        H /= 2;
+    }
+
+    cout << "Associativity: " << (current_min_s - 1) << endl;
+    cout << "Cache size: " << (current_min_s - 1) * sizeof(void *) * first_small_S_H << "b" << endl;
+
+    outFile << "Associativity: " << (current_min_s - 1) << endl;
+    outFile << "Cache size: " << (current_min_s - 1) * sizeof(void *) * first_small_S_H << "b" << endl;
     return -1;
 }
 
@@ -198,22 +270,21 @@ bool analyze_nearest_res_type() {
 }
 
 void analyze_trend(const vector<ResultType> &trend) {
-    bool is_first = true;
+    vector<int> indexes;
     for (size_t i = 0; i < trend.size() - 1; ++i) {
         if ((trend[i] == ResultType::PATTERN_S_DECREASE || trend[i] == ResultType::PATTERN_Z_UNKNOWN) &&
-            trend[i + 1] == ResultType::PATTERN_D_INCREASE) {
-            size_t index_of_D = i;
-            int block_size = 1 << (index_of_D);
-
-            if (is_first) {
-                cout << "Cache Line size: " << block_size * 8 << "b." << endl;
-                is_first = false;
-            } else {
-                cout << "Cache size: " << block_size << "kb." << endl;
-                return;
-            }
+            (trend[i + 1] == ResultType::PATTERN_D_INCREASE || trend[i + 1] == ResultType::PATTERN_F_ASSOCIATIVE)) {
+            indexes.push_back(i);
         }
     }
+
+    if (indexes.size() > 1) {
+        cout << "There are detected more than one entity. The first one should be cache line: ";
+    }
+    for (int i = 0; i < indexes.size(); ++i) {
+        cout << (1 << indexes[i]) * sizeof(void *) << "b ";
+    }
+    cout << endl;
 }
 
 void detect_block_size() {
@@ -238,6 +309,9 @@ void detect_block_size() {
 }
 
 int main() {
+#ifdef __APPLE__
+    pin_to_core_minimal_macos(2);
+#endif
     std::string filename = "hw_1_log.log";
     outFile.open(filename, std::ios::app);
     if (outFile.is_open()) {
