@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <fstream>
 #include <map>
+#include <filesystem>
+#include <cmath>
 
 using namespace std;
 
@@ -52,7 +54,7 @@ int get_associativity() {
     map<long long, std::pair<long long, long double> > jumps_map;
 
     int MAX_ASSOCIATIVITY = 50;
-    long long H = 16;
+    long long H = 1;
 
     long double prev_time = 0;
     long double last_H_with_jump = 0;
@@ -95,7 +97,7 @@ void get_associativity_1() {
     csvTable << "\n";
 
 
-    for (int H = 16; H * sizeof(void *) <= MAX_MEMORY; H *= 2) {
+    for (int H = 1; H * sizeof(void *) <= MAX_MEMORY; H *= 2) {
         csvTable << H;
         for (int S = 1; S < 30; ++S) {
             if (H * sizeof(void *) * S < MAX_MEMORY) {
@@ -116,11 +118,13 @@ int find_spots(int H) {
     long double prev_time = 0;
     long double cur_time = 0;
 
-    for (int i = 1; i < (MAX_MEMORY / 8) / H; i = i * 2) {
-        cur_time = measure_access_time(H, i);
-        long double jump = cur_time / prev_time;
-        if (prev_time != 0 && jump > JUMP) {
-            return i;
+    for (int S = 1; S < MAX_MEMORY; S = S * 2) {
+        if (H * (sizeof(void *)) * S <= MAX_MEMORY) {
+            cur_time = measure_access_time(H, S);
+            long double jump = cur_time / prev_time;
+            if (prev_time != 0 && jump > JUMP) {
+                return S;
+            }
         }
         prev_time = cur_time;
     }
@@ -132,7 +136,7 @@ enum class ResultType {
     PATTERN_S_DECREASE, // 'S'
     PATTERN_D_INCREASE, // 'D'
     PATTERN_F_ASSOCIATIVE, // 'F'
-    PATTERN_Z_UNKNOWN // 'Z' (Никто не набрал > 50%)
+    PATTERN_Z_UNKNOWN // 'Z' (No one more than > 50%)
 };
 
 char resultToChar(ResultType result) {
@@ -155,20 +159,20 @@ ResultType confidence_result(int H) {
     int decrease = 0;
     int increase = 0;
     int associative = 0;
-    int test_count = 0;
+    int test_count_cur = 0;
     int L = H / 2;
-    while (L > 1 && test_count < 4) {
-        test_count++;
+    while (L > 1 && test_count_cur < TEST_COUNT) {
+        test_count_cur++;
         int test = find_spots(H + L);
-        outFile << "test_count_" << test_count << ": " << test << endl;
+        outFile << "test_count_" << test_count_cur << ": " << test << endl;
         if (test == -1) {
             continue;
         }
         if (test < base) {
             decrease++;
-        } else if (test > decrease) {
+        } else if (test > base) {
             increase++;
-        } else {
+        } else if (test == base) {
             associative++;
         }
         L = L / 2;
@@ -191,10 +195,10 @@ ResultType confidence_result(int H) {
 void analyze_trend(const vector<ResultType> &trend) {
     bool is_first = true;
     for (size_t i = 0; i < trend.size() - 1; ++i) {
-        if ((trend[i] == ResultType::PATTERN_S_DECREASE || trend[i] == ResultType::PATTERN_D_INCREASE) &&
+        if ((trend[i] == ResultType::PATTERN_S_DECREASE || trend[i] == ResultType::PATTERN_Z_UNKNOWN) &&
             trend[i + 1] == ResultType::PATTERN_D_INCREASE) {
-            size_t index_of_D = i + 1;
-            int block_size = 1 << (index_of_D + 1);
+            size_t index_of_D = i;
+            int block_size = 1 << (index_of_D);
 
             if (is_first) {
                 cout << "Cache Line size: " << block_size * 8 << "b." << endl;
@@ -208,13 +212,14 @@ void analyze_trend(const vector<ResultType> &trend) {
 }
 
 void detect_block_size() {
-    int H = 16;
+    int H = 1;
 
-    vector<ResultType> trend(log(MAX_MEMORY), ResultType::PATTERN_Z_UNKNOWN);
+    vector<ResultType> trend(std::log2(MAX_MEMORY), ResultType::PATTERN_Z_UNKNOWN);
 
     while (H < MAX_MEMORY / 8) {
         ResultType result = confidence_result(H);
-        auto log_2_H = log(H);
+        int log_2_H = static_cast<int>(std::log2(H));
+        outFile << "H: " << H << " position: " << log_2_H << " result: " << resultToChar(result) << endl;
         trend[log_2_H] = result;
         H = H * 2;
     }
