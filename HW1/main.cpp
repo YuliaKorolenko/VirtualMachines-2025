@@ -14,7 +14,7 @@ using namespace std;
 
 const int ITERATIONS = 500000;
 const long long MAX_MEMORY = 1024 * 1024 * 1024;
-const int TEST_COUNT = 4;
+const int TEST_COUNT = 5;
 
 void **buffer;
 constexpr double JUMP = 1.9;
@@ -80,6 +80,7 @@ int get_associativity() {
 
     auto current = jumps_map.find(last_H_with_jump);
     cout << "Associativity: " << current->second.first - 1 << endl;
+    outFile << "Associativity: " << current->second.first - 1 << endl;
     return -1;
 }
 
@@ -160,9 +161,8 @@ ResultType confidence_result(int H) {
     int increase = 0;
     int associative = 0;
     int test_count_cur = 0;
-    int helper = H / 2;
-    int L = helper;
-    while (L >= 1 && test_count_cur < TEST_COUNT) {
+    int L = H / 2;
+    while (L > 1 && test_count_cur < TEST_COUNT) {
         test_count_cur++;
         int test = find_spots(H + L);
         outFile << "test_count_" << test_count_cur << ": " << test << endl;
@@ -176,8 +176,7 @@ ResultType confidence_result(int H) {
         } else if (test == base) {
             associative++;
         }
-        helper = helper / 2;
-        L += helper;
+        L = L / 2;
     }
 
     outFile << " decrease: " << decrease << " increase: " << increase << " associative: " << associative <<
@@ -192,6 +191,10 @@ ResultType confidence_result(int H) {
         return ResultType::PATTERN_F_ASSOCIATIVE;
     }
     return ResultType::PATTERN_Z_UNKNOWN;
+}
+
+bool analyze_nearest_res_type() {
+    return true;
 }
 
 void analyze_trend(const vector<ResultType> &trend) {
