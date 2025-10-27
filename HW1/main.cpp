@@ -30,7 +30,7 @@ const long long MAX_MEMORY = 1024 * 1024 * 1024;
 const int TEST_COUNT = 5;
 
 void **buffer;
-constexpr double JUMP = 1.9;
+constexpr double JUMP = 1.2;
 std::ofstream outFile;
 std::ofstream csvTable;
 
@@ -280,6 +280,9 @@ void analyze_trend(const vector<ResultType> &trend) {
 
     if (indexes.size() > 1) {
         cout << "There are detected more than one entity. The first one should be cache line: ";
+    }
+    if (indexes.size() == 1) {
+        cout << "Cache line: ";
     }
     for (int i = 0; i < indexes.size(); ++i) {
         cout << (1 << indexes[i]) * sizeof(void *) << "b ";
