@@ -27,10 +27,12 @@ using namespace std;
 
 const int ITERATIONS = 500000;
 const long long MAX_MEMORY = 1024 * 1024 * 1024;
-const int TEST_COUNT = 5;
+const int TEST_COUNT = 3;
+const int WINDOW_SIZE = 3;
 
 void **buffer;
-constexpr double JUMP = 1.2;
+double JUMP = 1.8;
+double JUMP_CURRENT = 1.19;
 std::ofstream outFile;
 std::ofstream csvTable;
 
@@ -63,7 +65,7 @@ long double measure_access_time(size_t H, size_t S) {
     return duration_ns.count() / static_cast<long double>(ITERATIONS);
 }
 
-bool isMovement(const map<long long, std::vector<std::pair<long long, long double> > > &jumps_maps, long long H) {
+bool isMovement(const map<long long, std::vector<long long> > &jumps_maps, long long H) {
     if (jumps_maps.size() < 2) {
         return true;
     }
@@ -81,9 +83,9 @@ bool isMovement(const map<long long, std::vector<std::pair<long long, long doubl
         return true;
     }
 
-    const long long min_s_c = current->second[0].first;
-    for (const auto key: prev->second | views::keys) {
-        if (key == min_s_c) {
+    const long long min_s_c = current->second[0];
+    for (const long long element: prev->second) {
+        if (element == min_s_c) {
             return false;
         }
     }
@@ -91,25 +93,65 @@ bool isMovement(const map<long long, std::vector<std::pair<long long, long doubl
     return true;
 }
 
+long double get_median(const std::vector<long double> &v, int start_idx, int end_idx) {
+    if (start_idx < 0 || end_idx > v.size() || start_idx >= end_idx) {
+        return 0.0;
+    }
+
+    std::vector<long double> slice;
+    for (int i = start_idx; i < end_idx; ++i) {
+        slice.push_back(v[i]);
+    }
+
+    std::sort(slice.begin(), slice.end());
+
+    int n = slice.size();
+    if (n % 2 == 0) {
+        return (slice[n / 2 - 1] + slice[n / 2]) / 2.0;
+    }
+    return slice[n / 2];
+}
+
+bool isJump(long long H, long double current_time, long long S, std::vector<long double> &measurements) {
+    int i = S - 1;
+    long double avg_before = get_median(measurements, i - WINDOW_SIZE, i);
+    long double avg_after = get_median(measurements, i, i + WINDOW_SIZE);
+
+    if (avg_before == 0.0) {
+        return false;
+    }
+
+    long double jump_ratio = avg_after / avg_before;
+
+    if (jump_ratio > JUMP && current_time / avg_before > JUMP_CURRENT) {
+        outFile << "Stride H: " << H
+                << ", Count elements S: " << S
+                << ", Jump: " << jump_ratio
+                << ", Current time: " << current_time
+                << std::endl;
+        return true;
+    }
+    return false;
+}
+
 int get_associativity() {
-    map<long long, std::vector<std::pair<long long, long double> > > jumps_map;
+    map<long long, std::vector<long long> > jumps_map;
 
     int MAX_ASSOCIATIVITY = 50;
     long long H = 1;
 
     long double prev_time = 0;
     while (H * MAX_ASSOCIATIVITY * sizeof(void *) < MAX_MEMORY) {
+        std::vector<long double> measurements;
+        for (long long S = 1; S < MAX_ASSOCIATIVITY; ++S) {
+            measurements.push_back(measure_access_time(H, S) * 100);
+        }
+
         long long S = 1;
         while (S < MAX_ASSOCIATIVITY) {
-            long double current_time = measure_access_time(H, S);
-            long double jump = current_time / prev_time;
-            if (prev_time != 0 && jump > JUMP) {
-                outFile << "Stride H: " << H
-                        << ", Count elements S: " << S
-                        << ", Jump: " << jump
-                        << ", Current time: " << current_time
-                        << std::endl;
-                jumps_map[H].emplace_back(S, jump);
+            long double current_time = measure_access_time(H, S) * 100;
+            if (prev_time != 0 && isJump(H, current_time, S, measurements)) {
+                jumps_map[H].emplace_back(S);
             }
             S += 1;
             prev_time = current_time;
@@ -123,7 +165,7 @@ int get_associativity() {
     }
 
 
-    auto current_min_s = jumps_map.find(H)->second[0].first;
+    auto current_min_s = jumps_map.find(H)->second[0];
     H = H / 2;
     auto first_small_S_H = H;
     while (H >= 16) {
@@ -133,8 +175,8 @@ int get_associativity() {
             const auto &s_jump_pairs = map_iterator->second;
 
             bool found_s = false;
-            for (const auto &pair: s_jump_pairs) {
-                if (pair.first == current_min_s) {
+            for (const auto &elem: s_jump_pairs) {
+                if (elem == current_min_s) {
                     found_s = true;
                     break;
                 }
@@ -156,7 +198,29 @@ int get_associativity() {
     return -1;
 }
 
+void calculate_jump(std::vector<long double> &timings) {
+    outFile << " Timings array: ";
+    for (int i = 0; i < timings.size(); ++i) {
+        outFile << timings[i] << " ";
+    }
+
+    outFile << endl;
+    double sum = 0;
+    for (double t: timings) sum += t;
+    double avg = sum / timings.size();
+    outFile << "Average: " << avg << endl;
+
+    double diff_sum = 0;
+    for (double t: timings) diff_sum += (t - avg) * (t - avg);
+    double stddev = sqrt(diff_sum / timings.size());
+    outFile << "stddev: " << stddev << endl;
+
+    outFile << "My jump: " << avg + 2 * stddev << endl;
+    JUMP = avg + stddev;
+}
+
 void create_table() {
+    std::vector<long double> timings;
     std::string filename = "timing_table.csv";
     std::ofstream csvTable(filename);
     if (!csvTable.is_open()) {
@@ -170,12 +234,17 @@ void create_table() {
     csvTable << "\n";
 
 
+    long double prev_time = -1;
     for (int H = 1; H * sizeof(void *) <= MAX_MEMORY; H *= 2) {
         csvTable << H;
         for (int S = 1; S < 30; ++S) {
             if (H * sizeof(void *) * S < MAX_MEMORY) {
                 long double current_time = measure_access_time(H, S);
+                if (S != 1) {
+                    timings.push_back(current_time / prev_time);
+                }
                 csvTable << "," << static_cast<long long>(std::round(current_time * 100));
+                prev_time = current_time;
             } else {
                 csvTable << "," << -1;
             }
@@ -184,6 +253,8 @@ void create_table() {
     }
     csvTable.close();
     std::cout << "File '" << filename << "' created successfully." << std::endl;
+
+    calculate_jump(timings);
 }
 
 
