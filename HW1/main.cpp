@@ -260,7 +260,7 @@ void create_table() {
 
 long double average_time_for_spots(int H) {
     long double all_time = 0;
-    for (int S = 1; S < MAX_SPOTS; S = S + 2) {
+    for (int S = 1; S < MAX_SPOTS; S = S + 1) {
         all_time += measure_access_time(H, S);
     }
     return all_time / MAX_SPOTS;
@@ -303,12 +303,13 @@ ResultType confidence_result(int H) {
         if (test == -1) {
             continue;
         }
-        if (test < avg_base) {
+        long double diff = avg_base / test;
+        if (0.9 < diff && diff < 1.1) {
+            associative++;
+        } else if (test < avg_base) {
             decrease++;
         } else if (test > avg_base) {
             increase++;
-        } else if (test == avg_base) {
-            associative++;
         }
         L = L / 2;
     }
@@ -334,7 +335,7 @@ bool analyze_nearest_res_type() {
 void analyze_trend(const vector<ResultType> &trend) {
     vector<int> indexes;
     for (size_t i = 0; i < trend.size() - 1; ++i) {
-        if ((trend[i] == ResultType::PATTERN_S_DECREASE || trend[i] == ResultType::PATTERN_Z_UNKNOWN) &&
+        if ((trend[i] == ResultType::PATTERN_S_DECREASE) &&
             (trend[i + 1] == ResultType::PATTERN_D_INCREASE || trend[i + 1] == ResultType::PATTERN_F_ASSOCIATIVE)) {
             indexes.push_back(i);
         }
@@ -360,7 +361,7 @@ void detect_block_size() {
     int plato_count = 0;
     while (H < MAX_MEMORY / 8 && plato_count < 2) {
         ResultType result = confidence_result(H);
-        if (result == ResultType::PATTERN_F_ASSOCIATIVE || result == ResultType::PATTERN_D_INCREASE) {
+        if (result == ResultType::PATTERN_D_INCREASE) {
             plato_count++;
         }
         int log_2_H = static_cast<int>(std::log2(H));
