@@ -29,6 +29,7 @@ const int ITERATIONS = 500000;
 const long long MAX_MEMORY = 1024 * 1024 * 1024;
 const int TEST_COUNT = 3;
 const int WINDOW_SIZE = 3;
+const int MAX_SPOTS = 1000;
 
 void **buffer;
 double JUMP = 1.8;
@@ -257,24 +258,14 @@ void create_table() {
     calculate_jump(timings);
 }
 
-
-int find_spots(int H) {
-    long double prev_time = 0;
-    long double cur_time = 0;
-
-    for (int S = 1; S < MAX_MEMORY; S = S * 2) {
-        if (H * (sizeof(void *)) * S <= MAX_MEMORY) {
-            cur_time = measure_access_time(H, S);
-            long double jump = cur_time / prev_time;
-            if (prev_time != 0 && jump > JUMP) {
-                return S;
-            }
-        }
-        prev_time = cur_time;
+long double average_time_for_spots(int H) {
+    long double all_time = 0;
+    for (int S = 1; S < MAX_SPOTS; S = S + 2) {
+        all_time += measure_access_time(H, S);
     }
-
-    return -1;
+    return all_time / MAX_SPOTS;
 }
+
 
 enum class ResultType {
     PATTERN_S_DECREASE, // 'S'
@@ -294,9 +285,9 @@ char resultToChar(ResultType result) {
 }
 
 ResultType confidence_result(int H) {
-    int base = find_spots(H);
-    outFile << endl << "H: " << H << " base: " << base << endl;
-    if (base == -1) {
+    long double avg_base = average_time_for_spots(H);
+    outFile << endl << "H: " << H << " base: " << avg_base << endl;
+    if (avg_base == -1) {
         return ResultType::PATTERN_Z_UNKNOWN;
     }
 
@@ -307,16 +298,16 @@ ResultType confidence_result(int H) {
     int L = H / 2;
     while (L > 1 && test_count_cur < TEST_COUNT) {
         test_count_cur++;
-        int test = find_spots(H + L);
+        long double test = average_time_for_spots(H + L);
         outFile << "test_count_" << test_count_cur << ": " << test << endl;
         if (test == -1) {
             continue;
         }
-        if (test < base) {
+        if (test < avg_base) {
             decrease++;
-        } else if (test > base) {
+        } else if (test > avg_base) {
             increase++;
-        } else if (test == base) {
+        } else if (test == avg_base) {
             associative++;
         }
         L = L / 2;
@@ -356,18 +347,22 @@ void analyze_trend(const vector<ResultType> &trend) {
         cout << "Cache line: ";
     }
     for (int i = 0; i < indexes.size(); ++i) {
-        cout << (1 << indexes[i]) * sizeof(void *) << "b ";
+        cout << (1 << indexes[i]) << "B ";
     }
     cout << endl;
 }
 
 void detect_block_size() {
-    int H = 1;
+    int H = 16;
 
     vector<ResultType> trend(std::log2(MAX_MEMORY), ResultType::PATTERN_Z_UNKNOWN);
 
-    while (H < MAX_MEMORY / 8) {
+    int plato_count = 0;
+    while (H < MAX_MEMORY / 8 && plato_count < 2) {
         ResultType result = confidence_result(H);
+        if (result == ResultType::PATTERN_F_ASSOCIATIVE || result == ResultType::PATTERN_D_INCREASE) {
+            plato_count++;
+        }
         int log_2_H = static_cast<int>(std::log2(H));
         outFile << "H: " << H << " position: " << log_2_H << " result: " << resultToChar(result) << endl;
         trend[log_2_H] = result;
