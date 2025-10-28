@@ -25,7 +25,7 @@ bool pin_to_core_minimal_macos(int core_id) {
 
 using namespace std;
 
-const int ITERATIONS = 500000;
+const int ITERATIONS = 100000;
 const long long MAX_MEMORY = 1024 * 1024 * 1024;
 const int TEST_COUNT = 3;
 const int WINDOW_SIZE = 3;
@@ -286,7 +286,7 @@ char resultToChar(ResultType result) {
 
 ResultType confidence_result(int H) {
     long double avg_base = average_time_for_spots(H);
-    outFile << endl << "H: " << H << " base: " << avg_base << endl;
+    outFile << endl << "H: " << H << " base: " << avg_base * 100 << endl;
     if (avg_base == -1) {
         return ResultType::PATTERN_Z_UNKNOWN;
     }
@@ -299,11 +299,12 @@ ResultType confidence_result(int H) {
     while (L > 1 && test_count_cur < TEST_COUNT) {
         test_count_cur++;
         long double test = average_time_for_spots(H + L);
-        outFile << "test_count_" << test_count_cur << ": " << test << endl;
+        outFile << "test_count_" << test_count_cur << ": time: " << test * 100;
         if (test == -1) {
             continue;
         }
         long double diff = avg_base / test;
+        outFile << " diff: " << diff << endl;
         if (0.9 < diff && diff < 1.1) {
             associative++;
         } else if (test < avg_base) {
