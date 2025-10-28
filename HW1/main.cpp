@@ -25,10 +25,11 @@ bool pin_to_core_minimal_macos(int core_id) {
 
 using namespace std;
 
-const int ITERATIONS = 100000;
+int ITERATIONS = 500000;
 const long long MAX_MEMORY = 1024 * 1024 * 1024;
 const int TEST_COUNT = 3;
 const int WINDOW_SIZE = 3;
+const int MAX_SPOTS = 1024;
 
 void **buffer;
 double JUMP = 1.8;
@@ -49,26 +50,12 @@ long double measure_access_time(size_t H, size_t S) {
 
     for (int j = 0; j < ITERATIONS; ++j) {
         p = *(const void **) p;
-        p = *(const void **) p;
-        p = *(const void **) p;
-        p = *(const void **) p;
-        p = *(const void **) p;
-        p = *(const void **) p;
-        p = *(const void **) p;
-        p = *(const void **) p;
     }
     fprintf(stdin, "%p", p);
 
     p = buffer;
     auto start = std::chrono::steady_clock::now();
     for (int j = 0; j < ITERATIONS; ++j) {
-        p = *(const void **) p;
-        p = *(const void **) p;
-        p = *(const void **) p;
-        p = *(const void **) p;
-        p = *(const void **) p;
-        p = *(const void **) p;
-        p = *(const void **) p;
         p = *(const void **) p;
     }
     auto end = std::chrono::steady_clock::now();
@@ -230,7 +217,7 @@ void calculate_jump(std::vector<long double> &timings) {
     outFile << "stddev: " << stddev << endl;
 
     outFile << "My jump: " << avg + 2 * stddev << endl;
-    JUMP = avg + 2 * stddev;
+    JUMP = avg + stddev;
 }
 
 void create_table() {
@@ -271,24 +258,14 @@ void create_table() {
     calculate_jump(timings);
 }
 
-
-int find_spots(int H) {
-    long double prev_time = 0;
-    long double cur_time = 0;
-
-    for (int S = 1; S < MAX_MEMORY; S = S * 2) {
-        if (H * (sizeof(void *)) * S <= MAX_MEMORY) {
-            cur_time = measure_access_time(H, S);
-            long double jump = cur_time / prev_time;
-            if (prev_time != 0 && jump > JUMP) {
-                return S;
-            }
-        }
-        prev_time = cur_time;
+long double average_time_for_spots(int H) {
+    long double all_time = 0;
+    for (int S = 1; S < MAX_SPOTS; S = S + 1) {
+        all_time += measure_access_time(H, S);
     }
-
-    return -1;
+    return all_time / MAX_SPOTS;
 }
+
 
 enum class ResultType {
     PATTERN_S_DECREASE, // 'S'
@@ -308,9 +285,9 @@ char resultToChar(ResultType result) {
 }
 
 ResultType confidence_result(int H) {
-    int base = find_spots(H);
-    outFile << endl << "H: " << H << " base: " << base << endl;
-    if (base == -1) {
+    long double avg_base = average_time_for_spots(H);
+    outFile << endl << "H: " << H << " base: " << avg_base * 100 << endl;
+    if (avg_base == -1) {
         return ResultType::PATTERN_Z_UNKNOWN;
     }
 
@@ -321,17 +298,19 @@ ResultType confidence_result(int H) {
     int L = H / 2;
     while (L > 1 && test_count_cur < TEST_COUNT) {
         test_count_cur++;
-        int test = find_spots(H + L);
-        outFile << "test_count_" << test_count_cur << ": " << test << endl;
+        long double test = average_time_for_spots(H + L);
+        outFile << "test_count_" << test_count_cur << ": time: " << test * 100;
         if (test == -1) {
             continue;
         }
-        if (test < base) {
-            decrease++;
-        } else if (test > base) {
-            increase++;
-        } else if (test == base) {
+        long double diff = avg_base / test;
+        outFile << " diff: " << diff << endl;
+        if (0.9 < diff && diff < 1.09) {
             associative++;
+        } else if (test > avg_base) {
+            decrease++;
+        } else if (test < avg_base) {
+            increase++;
         }
         L = L / 2;
     }
@@ -357,7 +336,7 @@ bool analyze_nearest_res_type() {
 void analyze_trend(const vector<ResultType> &trend) {
     vector<int> indexes;
     for (size_t i = 0; i < trend.size() - 1; ++i) {
-        if ((trend[i] == ResultType::PATTERN_S_DECREASE || trend[i] == ResultType::PATTERN_Z_UNKNOWN) &&
+        if ((trend[i] == ResultType::PATTERN_S_DECREASE) &&
             (trend[i + 1] == ResultType::PATTERN_D_INCREASE || trend[i + 1] == ResultType::PATTERN_F_ASSOCIATIVE)) {
             indexes.push_back(i);
         }
@@ -370,17 +349,18 @@ void analyze_trend(const vector<ResultType> &trend) {
         cout << "Cache line: ";
     }
     for (int i = 0; i < indexes.size(); ++i) {
-        cout << (1 << indexes[i]) * sizeof(void *) << "b ";
+        cout << (1 << indexes[i]) << "B ";
     }
     cout << endl;
 }
 
 void detect_block_size() {
-    int H = 1;
+    ITERATIONS = 200000;
+    int H = 16;
 
     vector<ResultType> trend(std::log2(MAX_MEMORY), ResultType::PATTERN_Z_UNKNOWN);
 
-    while (H < MAX_MEMORY / 8) {
+    while (H < 1024) {
         ResultType result = confidence_result(H);
         int log_2_H = static_cast<int>(std::log2(H));
         outFile << "H: " << H << " position: " << log_2_H << " result: " << resultToChar(result) << endl;
