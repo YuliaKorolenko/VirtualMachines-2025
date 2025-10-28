@@ -25,11 +25,11 @@ bool pin_to_core_minimal_macos(int core_id) {
 
 using namespace std;
 
-const int ITERATIONS = 100000;
+int ITERATIONS = 500000;
 const long long MAX_MEMORY = 1024 * 1024 * 1024;
 const int TEST_COUNT = 3;
 const int WINDOW_SIZE = 3;
-const int MAX_SPOTS = 1000;
+const int MAX_SPOTS = 1024;
 
 void **buffer;
 double JUMP = 1.8;
@@ -54,11 +54,11 @@ long double measure_access_time(size_t H, size_t S) {
     fprintf(stdin, "%p", p);
 
     p = buffer;
-    auto start = std::chrono::high_resolution_clock::now();
+    auto start = std::chrono::steady_clock::now();
     for (int j = 0; j < ITERATIONS; ++j) {
         p = *(const void **) p;
     }
-    auto end = std::chrono::high_resolution_clock::now();
+    auto end = std::chrono::steady_clock::now();
     fprintf(stdin, "%p", p);
 
 
@@ -305,7 +305,7 @@ ResultType confidence_result(int H) {
         }
         long double diff = avg_base / test;
         outFile << " diff: " << diff << endl;
-        if (0.9 < diff && diff < 1.1) {
+        if (0.9 < diff && diff < 1.09) {
             associative++;
         } else if (test < avg_base) {
             decrease++;
@@ -355,6 +355,7 @@ void analyze_trend(const vector<ResultType> &trend) {
 }
 
 void detect_block_size() {
+    ITERATIONS = 200000;
     int H = 16;
 
     vector<ResultType> trend(std::log2(MAX_MEMORY), ResultType::PATTERN_Z_UNKNOWN);
