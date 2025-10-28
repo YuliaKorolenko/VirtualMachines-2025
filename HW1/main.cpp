@@ -217,7 +217,7 @@ void calculate_jump(std::vector<long double> &timings) {
     outFile << "stddev: " << stddev << endl;
 
     outFile << "My jump: " << avg + 2 * stddev << endl;
-    JUMP = avg + 2 * stddev;
+    JUMP = avg + stddev;
 }
 
 void create_table() {
@@ -305,7 +305,7 @@ ResultType confidence_result(int H) {
         }
         long double diff = avg_base / test;
         outFile << " diff: " << diff << endl;
-        if (0.9 < diff && diff < 1.2) {
+        if (0.9 < diff && diff < 1.06) {
             associative++;
         } else if (test > avg_base) {
             decrease++;
