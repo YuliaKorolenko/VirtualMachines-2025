@@ -25,7 +25,7 @@ bool pin_to_core_minimal_macos(int core_id) {
 
 using namespace std;
 
-const int ITERATIONS = 500000 / 8;
+const int ITERATIONS = 100000;
 const long long MAX_MEMORY = 1024 * 1024 * 1024;
 const int TEST_COUNT = 3;
 const int WINDOW_SIZE = 3;
