@@ -320,7 +320,7 @@ ResultType confidence_result(int H) {
     if (decrease > test_count_cur / 2) {
         return ResultType::PATTERN_S_DECREASE;
     }
-    if (increase >= test_count_cur / 2) {
+    if (increase >= 1 && increase >= test_count_cur / 2) {
         return ResultType::PATTERN_D_INCREASE;
     }
     if (associative > test_count_cur / 2) {
