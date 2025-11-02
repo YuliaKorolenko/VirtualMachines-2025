@@ -140,13 +140,13 @@ size_t objects_snapshot (int *object_ids_buf, size_t object_ids_buf_size);
 #endif
 
 #ifdef DEBUG_VERSION
-// essential function to mock program stack
-void set_stack (size_t stack_top, size_t stack_bottom);
 
 // function to mock extra roots (Lama specific)
 void set_extra_roots (size_t extra_roots_size, void **extra_roots_ptr);
 #endif
 
+// essential function to mock program stack
+void set_stack (size_t stack_top, size_t stack_bottom);
 // ============================================================================
 //                          Utility functions
 // ============================================================================

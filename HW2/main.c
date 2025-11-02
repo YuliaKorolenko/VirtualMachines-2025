@@ -5,9 +5,37 @@
 #include <errno.h>
 #include <stdlib.h>
 #include "runtime/runtime.h"
+#include "runtime/gc.h"
 
 void *__start_custom_data;
 void *__stop_custom_data;
+#define STACK_SIZE 1024
+
+typedef struct {
+  size_t operand_stack[STACK_SIZE];
+  size_t stack_top_index;
+  size_t ebp_index;
+} OperandStack;
+
+OperandStack g_stack = { .stack_top_index = 0 };
+
+
+void begin_function(FILE *f, int num_args, int local_size) {
+  fprintf(f, "BEGIN\t%d ", num_args);
+  fprintf(f, "%d", local_size);
+
+  size_t old_ebp = g_stack.ebp_index;
+  g_stack.ebp_index = g_stack.stack_top_index;
+  g_stack.operand_stack[g_stack.stack_top_index++] = num_args;
+
+  // I don't understand what should be return address right now
+  g_stack.operand_stack[g_stack.stack_top_index++] = 2;
+
+  g_stack.operand_stack[g_stack.stack_top_index++] = old_ebp;
+
+  g_stack.stack_top_index += local_size;
+}
+
 
 /* The unpacked representation of bytecode file */
 typedef struct
@@ -204,8 +232,7 @@ void disassemble(FILE *f, bytefile *bf)
         break;
 
       case 2:
-        fprintf(f, "BEGIN\t%d ", INT);
-        fprintf(f, "%d", INT);
+        begin_function(f, INT, INT );
         break;
 
       case 3:
@@ -282,6 +309,8 @@ void disassemble(FILE *f, bytefile *bf)
       {
       case 0:
         fprintf(f, "CALL\tLread");
+        aint in = Lread();
+        g_stack.operand_stack[g_stack.stack_top_index++] = in;
         break;
 
       case 1:
@@ -335,6 +364,8 @@ void dump_file(FILE *f, bytefile *bf)
 
 int main(int argc, char *argv[])
 {
+  set_stack((size_t)&g_stack.operand_stack[0], (size_t)&g_stack.operand_stack[STACK_SIZE]);
+
   bytefile *f = read_file(argv[1]);
   dump_file(stdout, f);
   return 0;

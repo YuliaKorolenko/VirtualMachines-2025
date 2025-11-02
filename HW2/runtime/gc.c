@@ -680,17 +680,18 @@ void dump_heap () {
   }
 }
 
-void set_stack (size_t stack_top, size_t stack_bottom) {
-  __gc_stack_top    = stack_top;
-  __gc_stack_bottom = stack_bottom;
-}
-
 void set_extra_roots (size_t extra_roots_size, void **extra_roots_ptr) {
   memcpy(extra_roots.roots, extra_roots_ptr, MIN(sizeof(extra_roots.roots), extra_roots_size));
   clear_extra_roots();
 }
 
 #endif
+
+void set_stack (size_t stack_top, size_t stack_bottom) {
+  __gc_stack_top    = stack_top;
+  __gc_stack_bottom = stack_bottom;
+}
+
 
 /* Utility functions */
 
