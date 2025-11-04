@@ -26,14 +26,14 @@ static void operand_push(aint value) {
     g_stack.operand_stack[--g_stack.stack_top_index] = value;
 }
 
-static size_t operand_top(void) {
+static aint operand_top(void) {
     if (g_stack.stack_top_index + 1 >= STACK_SIZE) {
         failure("operand stack underflow in top operation\n");
     }
-    return g_stack.operand_stack[g_stack.stack_top_index + 1];
+    return g_stack.operand_stack[g_stack.stack_top_index];
 }
 
-static size_t operand_pop(void) {
+static void operand_pop(void) {
     if (g_stack.stack_top_index + 1 >= STACK_SIZE) {
         failure("operand stack underflow in pop operation\n");
     }
@@ -45,8 +45,32 @@ static void store_operation(FILE *f, size_t k) {
     if (k < 0 || k >= STACK_SIZE) {
         failure("global index out of bounds: %d (size=%d)\n", k, STACK_SIZE);
     }
-    const size_t v = operand_top();
+    aint v = operand_top();
     g_stack.operand_stack[STACK_SIZE - 1 - k] = v;
+}
+
+static size_t get_local_pos(size_t k) {
+    size_t local_size = g_stack.operand_stack[g_stack.ebp_index - 2];
+    if (k >= local_size) {
+        failure("local index out of bounds: %zu (size=%zu)\n", k, local_size);
+    }
+    size_t local_position = g_stack.ebp_index - 3 - k;
+    if (local_position >= STACK_SIZE) {
+        failure("local position out of stack bounds: %zu\n", local_position);
+    }
+    return local_position;
+}
+
+static void load_local(size_t k) {
+    size_t local_position = get_local_pos(k);
+    aint v = g_stack.operand_stack[local_position];
+    operand_push(v);
+}
+
+static void store_local(size_t k) {
+    size_t local_position = get_local_pos(k);
+    const size_t v = operand_top();
+    g_stack.operand_stack[local_position] = v;
 }
 
 void begin_function(FILE *f, int num_args, int local_size) {
@@ -54,6 +78,12 @@ void begin_function(FILE *f, int num_args, int local_size) {
     fprintf(f, "%d", local_size);
 
     // Shema: the number of arguments, EBP, return address, local vars number, local vars
+    //   [ebp + 2 ...] = arguments
+    //   [ebp + 1] = number of arguments
+    //   [ebp] = old ebp
+    //   [ebp-1] = return address
+    //   [ebp-2] = local_size
+    //   [ebp-3 - i] = local i (0..local_size-1)
 
     size_t old_ebp = g_stack.ebp_index;
     aint ret_ip = operand_top();
@@ -163,10 +193,12 @@ void disassemble(FILE *f, bytefile *bf) {
 
             case 1:
                 switch (l) {
-                    case 0:
-                        fprintf(f, "CONST\t");
-                        operand_push(INT);
+                    case 0: {
+                        int cnst = INT;
+                        fprintf(f, "CONST\t%d", cnst);
+                        operand_push(BOX(cnst));
                         break;
+                    }
 
                     case 1:
                         fprintf(f, "STRING\t%s", STRING);
@@ -232,9 +264,17 @@ void disassemble(FILE *f, bytefile *bf) {
                         }
                     }
                     break;
-                    case 1:
-                        fprintf(f, "L(%d)", INT);
+                    case 1: {
+                        aint l_number = INT;
+                        if (h == 4) {
+                            store_local(l_number);
+                        }
+                        if (h == 2) {
+                            load_local(l_number);
+                        }
+                        fprintf(f, "L(%d)", l_number);
                         break;
+                    }
                     case 2:
                         fprintf(f, "A(%d)", INT);
                         break;
@@ -300,7 +340,8 @@ void disassemble(FILE *f, bytefile *bf) {
                         fprintf(f, "CALL\t0x%.8x ", call_pos);
                         fprintf(f, "%d", number_of_args);
 
-                        // operand_push(ip);
+                        operand_push((aint) ip);
+                        ip = bf->code_ptr + call_pos;
                         break;
                     }
 
@@ -339,9 +380,12 @@ void disassemble(FILE *f, bytefile *bf) {
                         operand_push(in);
                         break;
 
-                    case 1:
+                    case 1: {
                         fprintf(f, "CALL\tLwrite");
+                        aint out = operand_top();
+                        Lwrite(out);
                         break;
+                    }
 
                     case 2:
                         fprintf(f, "CALL\tLlength");
@@ -386,6 +430,9 @@ void dump_file(FILE *f, bytefile *bf) {
         fprintf(f, "   0x%.8x: %s\n", get_public_offset(bf, i), get_public_name(bf, i));
 
     fprintf(f, "Code:\n");
+
+    // return address for first begin
+    operand_push(0);
     disassemble(f, bf);
 }
 

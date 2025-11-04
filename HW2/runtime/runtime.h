@@ -19,5 +19,6 @@
 _Noreturn void failure (char *s, ...);
 
 extern aint Lread ();
+extern aint Lwrite (aint n);
 
 #endif
