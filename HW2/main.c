@@ -19,18 +19,31 @@ typedef struct {
 
 OperandStack g_stack = {.stack_top_index = STACK_SIZE, .ebp_index = 0};
 
-static void operand_push(aint value) {
+typedef enum {
+    VAL, // unboxed integer value
+    POINTER // boxed pointer to heap object
+} ValueType;
+
+static void operand_push(aint value, ValueType type) {
     if (g_stack.stack_top_index == 0) {
         failure("operand stack overflow\n");
+    }
+
+    if (type == VAL) {
+        value = BOX(value);
     }
     g_stack.operand_stack[--g_stack.stack_top_index] = value;
 }
 
-static aint operand_top(void) {
+static aint operand_top(ValueType type) {
     if (g_stack.stack_top_index + 1 >= STACK_SIZE) {
         failure("operand stack underflow in top operation\n");
     }
-    return g_stack.operand_stack[g_stack.stack_top_index];
+    aint result = g_stack.operand_stack[g_stack.stack_top_index];
+    if (type == VAL) {
+        result = UNBOX(result);
+    }
+    return result;
 }
 
 static void operand_pop(void) {
@@ -40,13 +53,42 @@ static void operand_pop(void) {
     g_stack.stack_top_index++;
 }
 
-static void store_operation(FILE *f, size_t k) {
-    fprintf(f, "G(%d)", k);
+
+static aint operand_get(size_t k, ValueType type) {
+    if (k >= STACK_SIZE) {
+        failure("operand stack underflow in get operation\n");
+    }
+    aint result = g_stack.operand_stack[k];
+    bool isUnboxes = UNBOXED(result);
+    if (isUnboxes && type == POINTER) {
+        failure("Expected pointer, but receives VAL\n");
+    }
+    if (!isUnboxes && type == VAL) {
+        failure("Expected VAL, but receives POINTER\n");
+    }
+
+    if (type == VAL) {
+        result = UNBOX(result);
+    }
+    return result;
+}
+
+static void operand_set(size_t k, aint value, ValueType type) {
+    if (k >= STACK_SIZE) {
+        failure("operand stack underflow in set operation\n");
+    }
+    if (type == VAL) {
+        value = BOX(value);
+    }
+    g_stack.operand_stack[k] = value;
+}
+
+static void store_operation(FILE *f, size_t k, ValueType type) {
     if (k < 0 || k >= STACK_SIZE) {
         failure("global index out of bounds: %d (size=%d)\n", k, STACK_SIZE);
     }
-    aint v = operand_top();
-    g_stack.operand_stack[STACK_SIZE - 1 - k] = v;
+    const aint v = operand_top(type);
+    operand_set(STACK_SIZE - 1 - k, v, type);
 }
 
 static size_t get_local_pos(size_t k) {
@@ -61,22 +103,19 @@ static size_t get_local_pos(size_t k) {
     return local_position;
 }
 
-static void load_local(size_t k) {
+static void load_local(size_t k, ValueType type) {
     size_t local_position = get_local_pos(k);
-    aint v = g_stack.operand_stack[local_position];
-    operand_push(v);
+    aint v = operand_get(local_position, type);
+    operand_push(v, type);
 }
 
-static void store_local(size_t k) {
+static void store_local(size_t k, ValueType type) {
     size_t local_position = get_local_pos(k);
-    const size_t v = operand_top();
-    g_stack.operand_stack[local_position] = v;
+    const aint v = operand_top(type);
+    operand_set(local_position, v, type);
 }
 
 void begin_function(FILE *f, int num_args, int local_size) {
-    fprintf(f, "BEGIN\t%d ", num_args);
-    fprintf(f, "%d", local_size);
-
     // Shema: the number of arguments, EBP, return address, local vars number, local vars
     //   [ebp + 2 ...] = arguments
     //   [ebp + 1] = number of arguments
@@ -86,18 +125,32 @@ void begin_function(FILE *f, int num_args, int local_size) {
     //   [ebp-3 - i] = local i (0..local_size-1)
 
     size_t old_ebp = g_stack.ebp_index;
-    aint ret_ip = operand_top();
+
+    aint ret_ip = operand_top(POINTER);
+    fprintf(f, "Return in begin fun \t0x%.8x", ret_ip);
     operand_pop();
 
-    operand_push(num_args);
-    operand_push(old_ebp);
+    operand_push(num_args, VAL);
+    operand_push(old_ebp, VAL);
     g_stack.ebp_index = g_stack.stack_top_index;
-    operand_push(ret_ip);
-    operand_push(local_size);
+    operand_push(ret_ip, POINTER);
+    operand_push(local_size, VAL);
 
     for (int i = 0; i < local_size; i++) {
-        operand_push(-1);
+        operand_push(-1, VAL);
     }
+}
+
+static aint end_function(FILE *f) {
+    size_t ebp = g_stack.ebp_index;
+    aint ret_ip = operand_get(g_stack.ebp_index - 1, POINTER); // return address saved by CALL
+    size_t old_ebp = operand_get(ebp, VAL);
+    size_t num_args = operand_get(ebp + 1, VAL);
+
+    g_stack.stack_top_index = ebp + 2 + num_args;
+    g_stack.ebp_index = old_ebp;
+
+    return ret_ip;
 }
 
 
@@ -196,7 +249,7 @@ void disassemble(FILE *f, bytefile *bf) {
                     case 0: {
                         int cnst = INT;
                         fprintf(f, "CONST\t%d", cnst);
-                        operand_push(BOX(cnst));
+                        operand_push(cnst, VAL);
                         break;
                     }
 
@@ -221,9 +274,13 @@ void disassemble(FILE *f, bytefile *bf) {
                         fprintf(f, "JMP\t0x%.8x", INT);
                         break;
 
-                    case 6:
-                        fprintf(f, "END");
+                    case 6: {
+                        fprintf(f, "END\t");
+                        aint return_address = end_function(f);
+                        fprintf(f, "0x%.8x:\t", return_address);
+                        ip = bf->code_ptr + return_address;
                         break;
+                    }
 
                     case 7:
                         fprintf(f, "RET");
@@ -257,20 +314,20 @@ void disassemble(FILE *f, bytefile *bf) {
                 fprintf(f, "%s\t", lds[h - 2]);
                 switch (l) {
                     case 0: {
+                        int pos = INT;
+                        fprintf(f, "G(%d)", pos);
                         if (h == 4) {
-                            store_operation(f, INT);
-                        } else {
-                            fprintf(f, "G(%d)", INT);
+                            store_operation(f, pos, VAL);
                         }
                     }
                     break;
                     case 1: {
-                        aint l_number = INT;
+                        int l_number = INT;
                         if (h == 4) {
-                            store_local(l_number);
+                            store_local(l_number, VAL);
                         }
                         if (h == 2) {
-                            load_local(l_number);
+                            load_local(l_number, VAL);
                         }
                         fprintf(f, "L(%d)", l_number);
                         break;
@@ -296,9 +353,14 @@ void disassemble(FILE *f, bytefile *bf) {
                         fprintf(f, "CJMPnz\t0x%.8x", INT);
                         break;
 
-                    case 2:
-                        begin_function(f, INT, INT);
+                    case 2: {
+                        int num_args = INT;
+                        int local_size = INT;
+                        fprintf(f, "BEGIN\t%d ", num_args);
+                        fprintf(f, "%d", local_size);
+                        begin_function(f, num_args, local_size);
                         break;
+                    }
 
                     case 3:
                         fprintf(f, "CBEGIN\t%d ", INT);
@@ -340,7 +402,8 @@ void disassemble(FILE *f, bytefile *bf) {
                         fprintf(f, "CALL\t0x%.8x ", call_pos);
                         fprintf(f, "%d", number_of_args);
 
-                        operand_push((aint) ip);
+                        fprintf(f, "IP in call\t0x%.8x ", ip - bf->code_ptr);
+                        operand_push(ip - bf->code_ptr, POINTER);
                         ip = bf->code_ptr + call_pos;
                         break;
                     }
@@ -377,13 +440,13 @@ void disassemble(FILE *f, bytefile *bf) {
                     case 0:
                         fprintf(f, "CALL\tLread");
                         aint in = Lread();
-                        operand_push(in);
+                        operand_push(in, VAL);
                         break;
 
                     case 1: {
                         fprintf(f, "CALL\tLwrite");
-                        aint out = operand_top();
-                        Lwrite(out);
+                        aint out = operand_top(VAL);
+                        Lwrite(BOX(out));
                         break;
                     }
 
@@ -423,6 +486,8 @@ void dump_file(FILE *f, bytefile *bf) {
     fprintf(f, "Global area size        : %d\n", bf->global_area_size);
     // Places reserved for global variables
     g_stack.stack_top_index = STACK_SIZE - bf->global_area_size;
+    operand_push(-1, VAL);
+    operand_push(-1, VAL);
     fprintf(f, "Number of public symbols: %d\n", bf->public_symbols_number);
     fprintf(f, "Public symbols          :\n");
 
@@ -432,7 +497,7 @@ void dump_file(FILE *f, bytefile *bf) {
     fprintf(f, "Code:\n");
 
     // return address for first begin
-    operand_push(0);
+    operand_push(0, POINTER);
     disassemble(f, bf);
 }
 
