@@ -7,6 +7,7 @@
 #include "runtime/runtime.h"
 #include "runtime/gc.h"
 
+
 void *__start_custom_data;
 void *__stop_custom_data;
 #define STACK_SIZE 30
@@ -59,11 +60,11 @@ static aint operand_get(size_t k, ValueType type) {
         failure("operand stack underflow in get operation\n");
     }
     aint result = g_stack.operand_stack[k];
-    bool isUnboxes = UNBOXED(result);
-    if (isUnboxes && type == POINTER) {
+    bool is_unboxes = UNBOXED(result);
+    if (is_unboxes && type == POINTER) {
         failure("Expected pointer, but receives VAL\n");
     }
-    if (!isUnboxes && type == VAL) {
+    if (!is_unboxes && type == VAL) {
         failure("Expected VAL, but receives POINTER\n");
     }
 
@@ -83,12 +84,20 @@ static void operand_set(size_t k, aint value, ValueType type) {
     g_stack.operand_stack[k] = value;
 }
 
-static void store_operation(FILE *f, size_t k, ValueType type) {
+static void store_global(FILE *f, size_t k, ValueType type) {
     if (k < 0 || k >= STACK_SIZE) {
         failure("global index out of bounds: %d (size=%d)\n", k, STACK_SIZE);
     }
     const aint v = operand_top(type);
     operand_set(STACK_SIZE - 1 - k, v, type);
+}
+
+static void load_global(FILE *f, size_t k, ValueType type) {
+    if (k < 0 || k >= STACK_SIZE) {
+        failure("global index out of bounds: %d (size=%d)\n", k, STACK_SIZE);
+    }
+    const aint v = operand_get(STACK_SIZE - 1 - k, type);
+    operand_push(v, type);
 }
 
 static size_t get_local_pos(size_t k) {
@@ -241,7 +250,36 @@ void disassemble(FILE *f, bytefile *bf) {
 
             /* BINOP */
             case 0:
-                fprintf(f, "BINOP\t%s", ops[l - 1]);
+                fprintf(f, "BINOP\t%s", (l >= 1 && l <= 13) ? ops[l - 1] : "<invalid>");
+                {
+                    if (l < 1 || l > 13) { FAIL; }
+                    aint right = operand_top(VAL);
+                    operand_pop();
+                    aint left = operand_top(VAL);
+                    operand_pop();
+
+                    left = BOX(left);
+                    right = BOX(right);
+                    aint res = 0;
+                    switch (l) {
+                        case 1:  res = Ls__Infix_43((void*)left, (void*)right); break;   // +
+                        case 2:  res = Ls__Infix_45((void*)left, (void*)right); break;   // -
+                        case 3:  res = Ls__Infix_42((void*)left, (void*)right); break;   // *
+                        case 4:  res = Ls__Infix_47((void*)left, (void*)right); break;   // /
+                        case 5:  res = Ls__Infix_37((void*)left, (void*)right); break;   // %
+                        case 6:  res = Ls__Infix_60((void*)left, (void*)right); break;   // <
+                        case 7:  res = Ls__Infix_6061((void*)left, (void*)right); break; // <=
+                        case 8:  res = Ls__Infix_62((void*)left, (void*)right); break;   // >
+                        case 9:  res = Ls__Infix_6261((void*)left, (void*)right); break; // >=
+                        case 10: res = Ls__Infix_6161((void*)left, (void*)right); break; // ==
+                        case 11: res = Ls__Infix_3361((void*)left, (void*)right); break; // !=
+                        case 12: res = Ls__Infix_3838((void*)left, (void*)right); break; // &&
+                        case 13: res = Ls__Infix_3333((void*)left, (void*)right); break; // !!
+                        default: FAIL;
+                    }
+
+                    operand_push(UNBOX(res), VAL);
+                }
                 break;
 
             case 1:
@@ -278,6 +316,9 @@ void disassemble(FILE *f, bytefile *bf) {
                         fprintf(f, "END\t");
                         aint return_address = end_function(f);
                         fprintf(f, "0x%.8x:\t", return_address);
+                        if (return_address == 0) {
+                            goto stop;
+                        }
                         ip = bf->code_ptr + return_address;
                         break;
                     }
@@ -317,7 +358,10 @@ void disassemble(FILE *f, bytefile *bf) {
                         int pos = INT;
                         fprintf(f, "G(%d)", pos);
                         if (h == 4) {
-                            store_operation(f, pos, VAL);
+                            store_global(f, pos, VAL);
+                        }
+                        if (h == 2) {
+                            load_global(f, pos, VAL);
                         }
                     }
                     break;
@@ -440,7 +484,7 @@ void disassemble(FILE *f, bytefile *bf) {
                     case 0:
                         fprintf(f, "CALL\tLread");
                         aint in = Lread();
-                        operand_push(in, VAL);
+                        operand_push(UNBOX(in), VAL);
                         break;
 
                     case 1: {
@@ -501,13 +545,22 @@ void dump_file(FILE *f, bytefile *bf) {
     disassemble(f, bf);
 }
 
+
+FILE* old_stderr;
+
+void disable_stderr() {
+    old_stderr = stderr;
+    stderr = fopen("/dev/null", "w");
+}
+
 int main(int argc, char *argv[]) {
     // stack_top < stack_bottom
+    disable_stderr();
     size_t stack_top = (size_t) &g_stack.operand_stack[0];
     size_t stack_bottom = (size_t) &g_stack.operand_stack[STACK_SIZE];
     set_stack(stack_top, stack_bottom);
 
     bytefile *f = read_file(argv[1]);
-    dump_file(stdout, f);
+    dump_file(stderr, f);
     return 0;
 }
