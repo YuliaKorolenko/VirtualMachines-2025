@@ -20,6 +20,7 @@ _Noreturn void failure (char *s, ...);
 
 extern aint Lread ();
 extern aint Lwrite (aint n);
+extern aint Llength (void *p);
 extern aint Ls__Infix_43(void *p, void *q);   // +
 extern aint Ls__Infix_45(void *p, void *q);   // -
 extern aint Ls__Infix_42(void *p, void *q);   // *
@@ -35,5 +36,7 @@ extern aint Ls__Infix_3838(void *p, void *q); // &&
 extern aint Ls__Infix_3333(void *p, void *q); // !!
 
 extern void *Bstring (aint* args/*void *p*/);
+extern void *Belem(void *p, aint i);
+extern void *Bsta (void *x, aint i, void *v);
 
 #endif

@@ -10,7 +10,7 @@
 
 void *__start_custom_data;
 void *__stop_custom_data;
-#define STACK_SIZE 500
+#define STACK_SIZE 1000
 
 typedef struct {
     aint operand_stack[STACK_SIZE];
@@ -22,7 +22,8 @@ OperandStack g_stack = {.stack_top_index = STACK_SIZE, .ebp_index = 0};
 
 typedef enum {
     VAL, // unboxed integer value
-    POINTER // boxed pointer to heap object
+    POINTER, // boxed pointer to heap object
+    UNKNOWN
 } ValueType;
 
 static void operand_push(aint value, ValueType type) {
@@ -84,20 +85,20 @@ static void operand_set(size_t k, aint value, ValueType type) {
     g_stack.operand_stack[k] = value;
 }
 
-static void store_global(FILE *f, size_t k, ValueType type) {
+static void store_global(FILE *f, size_t k) {
     if (k < 0 || k >= STACK_SIZE) {
         failure("global index out of bounds: %d (size=%d)\n", k, STACK_SIZE);
     }
-    const aint v = operand_top(type);
-    operand_set(STACK_SIZE - 1 - k, v, type);
+    const aint v = operand_top(UNKNOWN);
+    operand_set(STACK_SIZE - 1 - k, v, UNKNOWN);
 }
 
-static void load_global(FILE *f, size_t k, ValueType type) {
+static void load_global(FILE *f, size_t k) {
     if (k < 0 || k >= STACK_SIZE) {
         failure("global index out of bounds: %d (size=%d)\n", k, STACK_SIZE);
     }
-    const aint v = operand_get(STACK_SIZE - 1 - k, type);
-    operand_push(v, type);
+    const aint v = operand_get(STACK_SIZE - 1 - k, UNKNOWN);
+    operand_push(v, UNKNOWN);
 }
 
 static size_t get_local_pos(size_t k) {
@@ -113,16 +114,16 @@ static size_t get_local_pos(size_t k) {
     return local_position;
 }
 
-static void load_local(size_t k, ValueType type) {
+static void load_local(size_t k) {
     size_t local_position = get_local_pos(k);
-    aint v = operand_get(local_position, type);
-    operand_push(v, type);
+    aint v = operand_get(local_position, UNKNOWN);
+    operand_push(v, UNKNOWN);
 }
 
-static void store_local(size_t k, ValueType type) {
+static void store_local(size_t k) {
     size_t local_position = get_local_pos(k);
-    const aint v = operand_top(type);
-    operand_set(local_position, v, type);
+    const aint v = operand_top(UNKNOWN);
+    operand_set(local_position, v, UNKNOWN);
 }
 
 static void load_arg(FILE *f, size_t k) {
@@ -131,8 +132,8 @@ static void load_arg(FILE *f, size_t k) {
         failure("argument index out of bounds: %zu (count=%zu)\n", k, arg_count);
     }
     size_t arg_position = g_stack.ebp_index + 2 + k;
-    aint v = operand_get(arg_position, VAL);
-    operand_push(v, VAL);
+    aint v = operand_get(arg_position, UNKNOWN);
+    operand_push(v, UNKNOWN);
 }
 
 void begin_function(FILE *f, int num_args, int local_size) {
@@ -317,9 +318,11 @@ void disassemble(FILE *f, bytefile *bf) {
                     }
 
                     case 1: {
-                        // const char * s = STRING;
-                        // fprintf(f, "STRING\t%s", s);
-                        // operand_push((aint) Bstring((aint *) &s), POINTER);
+                        const char * s = STRING;
+                        fprintf(f, "STRING\t%s", s);
+                        aint res = (aint) Bstring((aint *) &s);
+                        fprintf(f, "In: 0x%.8x\t", res);
+                        operand_push(res, POINTER);
                         break;
                     }
 
@@ -332,9 +335,18 @@ void disassemble(FILE *f, bytefile *bf) {
                         fprintf(f, "STI");
                         break;
 
-                    case 4:
+                    case 4: {
                         fprintf(f, "STA");
+                        const aint value = operand_top(UNKNOWN);
+                        operand_pop();
+                        const aint ind = operand_top(UNKNOWN);
+                        operand_pop();
+                        const aint arr = operand_top(POINTER);
+                        operand_pop();
+                        aint res = (aint) Bsta((void *) arr, ind, (void *) value);
+                        operand_push(res, VAL);
                         break;
+                    }
 
                     case 5: {
                         aint jump_address = INT;
@@ -371,9 +383,17 @@ void disassemble(FILE *f, bytefile *bf) {
                         fprintf(f, "SWAP");
                         break;
 
-                    case 11:
+                    case 11: {
                         fprintf(f, "ELEM");
+                        aint b = operand_top(VAL);
+                        operand_pop();
+                        aint a = operand_top(POINTER); // container
+                        operand_pop();
+
+                        void *res = Belem((void *)a, BOX(b));
+                        operand_push((aint)res, UNKNOWN);
                         break;
+                    }
 
                     default:
                         FAIL;
@@ -389,20 +409,20 @@ void disassemble(FILE *f, bytefile *bf) {
                         int pos = INT;
                         fprintf(f, "G(%d)", pos);
                         if (h == 4) {
-                            store_global(f, pos, VAL);
+                            store_global(f, pos);
                         }
                         if (h == 2) {
-                            load_global(f, pos, VAL);
+                            load_global(f, pos);
                         }
                     }
                     break;
                     case 1: {
                         int l_number = INT;
                         if (h == 4) {
-                            store_local(l_number, VAL);
+                            store_local(l_number);
                         }
                         if (h == 2) {
-                            load_local(l_number, VAL);
+                            load_local(l_number);
                         }
                         fprintf(f, "L(%d)", l_number);
                         break;
@@ -546,6 +566,11 @@ void disassemble(FILE *f, bytefile *bf) {
 
                     case 2:
                         fprintf(f, "CALL\tLlength");
+                        aint out = operand_top(POINTER);
+                        operand_pop();
+                        fprintf(f, "Out: 0x%.8x\t", out);
+                        aint res = UNBOX(Llength((void *) out));
+                        operand_push(res, VAL);
                         break;
 
                     case 3:
@@ -606,6 +631,7 @@ void disable_stderr() {
 int main(int argc, char *argv[]) {
     // stack_top < stack_bottom
     // disable_stderr();
+    __gc_init();
     size_t stack_top = (size_t) &g_stack.operand_stack[0];
     size_t stack_bottom = (size_t) &g_stack.operand_stack[STACK_SIZE];
     set_stack(stack_top, stack_bottom);
