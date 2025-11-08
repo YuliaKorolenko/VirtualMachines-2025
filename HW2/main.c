@@ -10,7 +10,7 @@
 
 void *__start_custom_data;
 void *__stop_custom_data;
-#define STACK_SIZE 30
+#define STACK_SIZE 500
 
 typedef struct {
     aint operand_stack[STACK_SIZE];
@@ -61,9 +61,9 @@ static aint operand_get(size_t k, ValueType type) {
     }
     aint result = g_stack.operand_stack[k];
     bool is_unboxes = UNBOXED(result);
-    if (is_unboxes && type == POINTER) {
-        failure("Expected pointer, but receives VAL\n");
-    }
+    // if (is_unboxes && type == POINTER) {
+        // failure("Expected pointer, but receives VAL\n");
+    // }
     if (!is_unboxes && type == VAL) {
         failure("Expected VAL, but receives POINTER\n");
     }
@@ -316,9 +316,12 @@ void disassemble(FILE *f, bytefile *bf) {
                         break;
                     }
 
-                    case 1:
-                        fprintf(f, "STRING\t%s", STRING);
+                    case 1: {
+                        // const char * s = STRING;
+                        // fprintf(f, "STRING\t%s", s);
+                        // operand_push((aint) Bstring((aint *) &s), POINTER);
                         break;
+                    }
 
                     case 2:
                         fprintf(f, "SEXP\t%s ", STRING);

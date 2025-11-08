@@ -34,4 +34,6 @@ extern aint Ls__Infix_3361(void *p, void *q); // !=
 extern aint Ls__Infix_3838(void *p, void *q); // &&
 extern aint Ls__Infix_3333(void *p, void *q); // !!
 
+extern void *Bstring (aint* args/*void *p*/);
+
 #endif
