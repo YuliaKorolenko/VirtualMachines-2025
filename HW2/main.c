@@ -112,7 +112,7 @@ static aint get_closure_pntr() {
 static aint load_closure(FILE *f, size_t k) {
     aint closure_pntr = get_closure_pntr();
     data *closure_data = TO_DATA(closure_pntr);
-    aint res = ((aint *)closure_data->contents)[k + 1];
+    aint res = ((aint *) closure_data->contents)[k + 1];
 
     operand_push(res, UNKNOWN);
 }
@@ -150,6 +150,16 @@ static void load_arg(FILE *f, size_t k) {
     size_t arg_position = g_stack.ebp_index + 3 + k;
     aint v = operand_get(arg_position, UNKNOWN);
     operand_push(v, UNKNOWN);
+}
+
+static void store_arg(size_t k) {
+    size_t arg_count = operand_get(g_stack.ebp_index + 1, VAL);
+    if (k >= arg_count) {
+        failure("argument index out of bounds: %zu (count=%zu)\n", k, arg_count);
+    }
+    size_t arg_position = g_stack.ebp_index + 3 + k;
+    const aint v = operand_top(UNKNOWN);
+    operand_set(arg_position, v, UNKNOWN);
 }
 
 // Shema before:
@@ -241,6 +251,7 @@ static void sexp_function(char *tag, int elem_size) {
 }
 
 static void closure_function(int code_pntr, int arg_number) {
+    reverse_last_el(arg_number);
     operand_push(code_pntr, POINTER);
     aint *SP = &g_stack.operand_stack[g_stack.stack_top_index];
     aint *closure = Bclosure(SP, BOX(arg_number));
@@ -541,7 +552,9 @@ void disassemble(FILE *f, bytefile *bf) {
                     case 2: {
                         int arg_number = INT;
                         fprintf(f, "A(%d)", arg_number);
-                        if (h == 2) {
+                        if (h == 4) {
+                            store_arg(arg_number);
+                        } else if (h == 2) {
                             load_arg(f, arg_number);
                         } else {
                             failure("A is not supported");
@@ -605,8 +618,9 @@ void disassemble(FILE *f, bytefile *bf) {
                                     break;
                                 }
                                 case 1: {
-                                    fprintf(f, "L(%d)", INT);
-                                    failure("L not supported");
+                                    int pos = INT;
+                                    fprintf(f, "L(%d)", pos);
+                                    load_local(pos);
                                     break;
                                 }
                                 case 2: {
@@ -616,8 +630,9 @@ void disassemble(FILE *f, bytefile *bf) {
                                     break;
                                 }
                                 case 3: {
-                                    fprintf(f, "C(%d)", INT);
-                                    failure("C not supported");
+                                    int pos = INT;
+                                    fprintf(f, "C(%d)", pos);
+                                    load_closure(f, pos);
                                     break;
                                 }
                                 default:
@@ -642,7 +657,7 @@ void disassemble(FILE *f, bytefile *bf) {
                         int number_of_args = INT;
                         fprintf(f, "CALL\t0x%.8x ", call_pos);
                         fprintf(f, "%d", number_of_args);
-
+                        reverse_last_el(number_of_args);
                         fprintf(f, "IP in call\t0x%.8x ", ip - bf->code_ptr);
                         operand_push(0, VAL);
                         operand_push((aint) ip, POINTER);
