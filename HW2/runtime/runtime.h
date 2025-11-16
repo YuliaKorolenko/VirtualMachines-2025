@@ -38,5 +38,10 @@ extern aint Ls__Infix_3333(void *p, void *q); // !!
 extern void *Bstring (aint* args/*void *p*/);
 extern void *Belem(void *p, aint i);
 extern void *Bsta (void *x, aint i, void *v);
+extern void *Barray (aint* args, aint bn);
+extern void *Bsexp (aint* args, aint bn);
+extern aint LtagHash (char *s);
+extern aint Btag (void *d, aint t, aint n);
+extern void *Lstring (aint* args /* void *p */);
 
 #endif
