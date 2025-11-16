@@ -10,7 +10,7 @@
 
 void *__start_custom_data;
 void *__stop_custom_data;
-#define STACK_SIZE 1000
+#define STACK_SIZE 20000
 
 typedef struct {
     aint operand_stack[STACK_SIZE];
@@ -63,7 +63,7 @@ static aint operand_get(size_t k, ValueType type) {
     aint result = g_stack.operand_stack[k];
     bool is_unboxes = UNBOXED(result);
     // if (is_unboxes && type == POINTER) {
-        // failure("Expected pointer, but receives VAL\n");
+    // failure("Expected pointer, but receives VAL\n");
     // }
     if (!is_unboxes && type == VAL) {
         failure("Expected VAL, but receives POINTER\n");
@@ -176,6 +176,46 @@ static aint end_function(FILE *f) {
     return ret_ip;
 }
 
+static void reverse_last_el(int el_count) {
+    if (el_count <= 1) {
+        return;
+    }
+
+    size_t have = STACK_SIZE - g_stack.stack_top_index;
+    if ((size_t) el_count > have) {
+        failure("reverse_last_el: not enough operands: need=%d have=%zu\n", el_count, have);
+    }
+    aint *SP = &g_stack.operand_stack[g_stack.stack_top_index];
+    for (int i = 0, j = el_count - 1; i < j; ++i, --j) {
+        aint tmp = SP[i];
+        SP[i] = SP[j];
+        SP[j] = tmp;
+    }
+}
+
+static void barray_function(int n) {
+    if (n < 0) {
+        failure("Barray: invalid size %d\n", n);
+    }
+
+    reverse_last_el(n);
+    aint *SP = &g_stack.operand_stack[g_stack.stack_top_index];
+
+    aint arr = (aint) Barray(SP, BOX(n));
+    g_stack.stack_top_index += (size_t) n;
+    operand_push(arr, POINTER);
+}
+
+static void sexp_function(char *tag, int elem_size) {
+    aint hash_tag = UNBOX(LtagHash(tag));
+    operand_push(hash_tag, VAL);
+
+    reverse_last_el(elem_size + 1);
+    aint *SP = &g_stack.operand_stack[g_stack.stack_top_index];
+    aint result = (aint) Bsexp(SP, BOX(elem_size + 1));
+    g_stack.stack_top_index += elem_size + 1;
+    operand_push(result, POINTER);
+}
 
 /* The unpacked representation of bytecode file */
 typedef struct {
@@ -318,7 +358,7 @@ void disassemble(FILE *f, bytefile *bf) {
                     }
 
                     case 1: {
-                        const char * s = STRING;
+                        const char *s = STRING;
                         fprintf(f, "STRING\t%s", s);
                         aint res = (aint) Bstring((aint *) &s);
                         fprintf(f, "In: 0x%.8x\t", res);
@@ -326,10 +366,14 @@ void disassemble(FILE *f, bytefile *bf) {
                         break;
                     }
 
-                    case 2:
-                        fprintf(f, "SEXP\t%s ", STRING);
-                        fprintf(f, "%d", INT);
+                    case 2: {
+                        char *tag = STRING;
+                        int elem_size = INT;
+                        fprintf(f, "SEXP\t%s ", tag);
+                        fprintf(f, "%d", elem_size);
+                        sexp_function(tag, elem_size);
                         break;
+                    }
 
                     case 3:
                         fprintf(f, "STI");
@@ -350,7 +394,7 @@ void disassemble(FILE *f, bytefile *bf) {
 
                     case 5: {
                         aint jump_address = INT;
-                        fprintf(f, "JMP\t0x%.8x", INT);
+                        fprintf(f, "JMP\t0x%.8x", jump_address);
                         ip = bf->code_ptr + jump_address;
                         break;
                     }
@@ -375,13 +419,22 @@ void disassemble(FILE *f, bytefile *bf) {
                         operand_pop();
                         break;
 
-                    case 9:
+                    case 9: {
                         fprintf(f, "DUP");
+                        operand_push(operand_top(UNKNOWN), UNKNOWN);
                         break;
+                    }
 
-                    case 10:
+                    case 10: {
                         fprintf(f, "SWAP");
+                        aint a = operand_top(UNKNOWN);
+                        operand_pop();
+                        aint b = operand_top(UNKNOWN);
+                        operand_pop();
+                        operand_push(a, UNKNOWN);
+                        operand_push(b, UNKNOWN);
                         break;
+                    }
 
                     case 11: {
                         fprintf(f, "ELEM");
@@ -390,8 +443,8 @@ void disassemble(FILE *f, bytefile *bf) {
                         aint a = operand_top(POINTER); // container
                         operand_pop();
 
-                        void *res = Belem((void *)a, BOX(b));
-                        operand_push((aint)res, UNKNOWN);
+                        void *res = Belem((void *) a, BOX(b));
+                        operand_push((aint) res, UNKNOWN);
                         break;
                     }
 
@@ -522,10 +575,18 @@ void disassemble(FILE *f, bytefile *bf) {
                         break;
                     }
 
-                    case 7:
-                        fprintf(f, "TAG\t%s ", STRING);
-                        fprintf(f, "%d", INT);
+                    case 7: {
+                        char * tag = STRING;
+                        int elem_size = INT;
+                        fprintf(f, "TAG\t%s ", tag);
+                        fprintf(f, "%d", elem_size);
+                        aint sexp = operand_top(POINTER);
+                        operand_pop();
+                        aint res = Btag((void *) sexp, LtagHash(tag), BOX(elem_size));
+                        res = UNBOX(res);
+                        operand_push(res, VAL);
                         break;
+                    }
 
                     case 8:
                         fprintf(f, "ARRAY\t%d", INT);
@@ -577,9 +638,12 @@ void disassemble(FILE *f, bytefile *bf) {
                         fprintf(f, "CALL\tLstring");
                         break;
 
-                    case 4:
-                        fprintf(f, "CALL\tBarray\t%d", INT);
+                    case 4: {
+                        int size = INT;
+                        fprintf(f, "CALL\tBarray\t%d", size);
+                        barray_function(size);
                         break;
+                    }
 
                     default:
                         FAIL;
