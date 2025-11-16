@@ -101,6 +101,22 @@ static void load_global(FILE *f, size_t k) {
     operand_push(v, UNKNOWN);
 }
 
+static aint get_closure_pntr() {
+    aint closure_pntr = operand_get(g_stack.ebp_index + 2, POINTER);
+    if (TAG(TO_DATA(closure_pntr)->data_header) != CLOSURE_TAG) {
+        failure("Expected closure\n");
+    }
+    return closure_pntr;
+}
+
+static aint load_closure(FILE *f, size_t k) {
+    aint closure_pntr = get_closure_pntr();
+    data *closure_data = TO_DATA(closure_pntr);
+    aint res = ((aint *)closure_data->contents)[k + 1];
+
+    operand_push(res, UNKNOWN);
+}
+
 static size_t get_local_pos(size_t k) {
     size_t local_count = operand_get(g_stack.ebp_index - 2, VAL);
     if (k >= local_count) {
@@ -131,14 +147,21 @@ static void load_arg(FILE *f, size_t k) {
     if (k >= arg_count) {
         failure("argument index out of bounds: %zu (count=%zu)\n", k, arg_count);
     }
-    size_t arg_position = g_stack.ebp_index + 2 + k;
+    size_t arg_position = g_stack.ebp_index + 3 + k;
     aint v = operand_get(arg_position, UNKNOWN);
     operand_push(v, UNKNOWN);
 }
 
+// Shema before:
+// [top] = ret_ip
+// [top - 1] = closure
+// [top - 1] = args[1]
+// [top - 2] = args[0]
+
 void begin_function(FILE *f, int num_args, int local_size) {
     // Shema: the number of arguments, EBP, return address, local vars number, local vars
     //   [ebp + 2 ...] = arguments
+    //   [ebp + 2] == closure/empty
     //   [ebp + 1] = number of arguments
     //   [ebp] = old ebp
     //   [ebp-1] = return address
@@ -163,15 +186,15 @@ void begin_function(FILE *f, int num_args, int local_size) {
 }
 
 static aint end_function(FILE *f) {
-    aint stack_top = operand_top(VAL);
+    aint stack_top = operand_top(UNKNOWN);
     size_t ebp = g_stack.ebp_index;
     aint ret_ip = operand_get(g_stack.ebp_index - 1, POINTER); // return address saved by CALL
     size_t old_ebp = operand_get(ebp, VAL);
     size_t num_args = operand_get(ebp + 1, VAL);
 
-    g_stack.stack_top_index = ebp + 2 + num_args;
+    g_stack.stack_top_index = ebp + 3 + num_args;
     g_stack.ebp_index = old_ebp;
-    operand_push(stack_top, VAL);
+    operand_push(stack_top, UNKNOWN);
 
     return ret_ip;
 }
@@ -215,6 +238,39 @@ static void sexp_function(char *tag, int elem_size) {
     aint result = (aint) Bsexp(SP, BOX(elem_size + 1));
     g_stack.stack_top_index += elem_size + 1;
     operand_push(result, POINTER);
+}
+
+static void closure_function(int code_pntr, int arg_number) {
+    operand_push(code_pntr, POINTER);
+    aint *SP = &g_stack.operand_stack[g_stack.stack_top_index];
+    aint *closure = Bclosure(SP, BOX(arg_number));
+
+    g_stack.stack_top_index += arg_number + 1;
+    operand_push((aint) closure, POINTER);
+}
+
+
+static aint callc_function(int arg_number) {
+    size_t closure_pos = g_stack.stack_top_index + arg_number;
+    if (closure_pos >= STACK_SIZE)
+        failure("CALLC: invalid stack layout\n");
+
+    aint closure_val = operand_get(closure_pos, POINTER);
+    data *closure_data = TO_DATA(closure_val);
+
+    for (int i = arg_number - 1; i >= 0; --i) {
+        operand_set(g_stack.stack_top_index + i + 1,
+                    operand_get(g_stack.stack_top_index + i, UNKNOWN),
+                    UNKNOWN);
+    }
+    operand_set(g_stack.stack_top_index, closure_val, POINTER);
+    const aint code_pntr = ((aint *) closure_data->contents)[0];
+    if (TAG(closure_data->data_header) != CLOSURE_TAG) {
+        failure("Expected closure\n");
+    }
+
+
+    return code_pntr;
 }
 
 /* The unpacked representation of bytecode file */
@@ -463,9 +519,10 @@ void disassemble(FILE *f, bytefile *bf) {
                         fprintf(f, "G(%d)", pos);
                         if (h == 4) {
                             store_global(f, pos);
-                        }
-                        if (h == 2) {
+                        } else if (h == 2) {
                             load_global(f, pos);
+                        } else {
+                            failure("G is not supported");
                         }
                     }
                     break;
@@ -473,9 +530,10 @@ void disassemble(FILE *f, bytefile *bf) {
                         int l_number = INT;
                         if (h == 4) {
                             store_local(l_number);
-                        }
-                        if (h == 2) {
+                        } else if (h == 2) {
                             load_local(l_number);
+                        } else {
+                            failure("L is not supported");
                         }
                         fprintf(f, "L(%d)", l_number);
                         break;
@@ -485,12 +543,17 @@ void disassemble(FILE *f, bytefile *bf) {
                         fprintf(f, "A(%d)", arg_number);
                         if (h == 2) {
                             load_arg(f, arg_number);
+                        } else {
+                            failure("A is not supported");
                         }
                         break;
                     }
-                    case 3:
-                        fprintf(f, "C(%d)", INT);
+                    case 3: {
+                        int num_args = INT;
+                        fprintf(f, "C(%d)", num_args);
+                        load_closure(f, num_args);
                         break;
+                    }
                     default:
                         FAIL;
                 }
@@ -520,46 +583,57 @@ void disassemble(FILE *f, bytefile *bf) {
                         break;
                     }
 
+                    case 3:
                     case 2: {
                         int num_args = INT;
                         int local_size = INT;
-                        fprintf(f, "BEGIN\t%d ", num_args);
+                        fprintf(f, "BEGIN\t%d ", num_args); // + CBEGIN
                         fprintf(f, "%d", local_size);
                         begin_function(f, num_args, local_size);
                         break;
                     }
 
-                    case 3:
-                        fprintf(f, "CBEGIN\t%d ", INT);
-                        fprintf(f, "%d", INT);
-                        break;
-
-                    case 4:
-                        fprintf(f, "CLOSURE\t0x%.8x", INT); {
-                            int n = INT;
-                            for (int i = 0; i < n; i++) {
-                                switch (BYTE) {
-                                    case 0:
-                                        fprintf(f, "G(%d)", INT);
-                                        break;
-                                    case 1:
-                                        fprintf(f, "L(%d)", INT);
-                                        break;
-                                    case 2:
-                                        fprintf(f, "A(%d)", INT);
-                                        break;
-                                    case 3:
-                                        fprintf(f, "C(%d)", INT);
-                                        break;
-                                    default:
-                                        FAIL;
+                    case 4: {
+                        int code_pntr = INT;
+                        int n = INT;
+                        fprintf(f, "CLOSURE\t0x%.8x ", code_pntr);
+                        for (int i = 0; i < n; i++) {
+                            switch (BYTE) {
+                                case 0: {
+                                    fprintf(f, "G(%d)", INT);
+                                    failure("G not supported");
+                                    break;
                                 }
+                                case 1: {
+                                    fprintf(f, "L(%d)", INT);
+                                    failure("L not supported");
+                                    break;
+                                }
+                                case 2: {
+                                    int pos = INT;
+                                    fprintf(f, "A(%d)", pos);
+                                    load_arg(f, pos);
+                                    break;
+                                }
+                                case 3: {
+                                    fprintf(f, "C(%d)", INT);
+                                    failure("C not supported");
+                                    break;
+                                }
+                                default:
+                                    FAIL;
                             }
-                        };
+                        }
+                        closure_function(code_pntr, n);
                         break;
+                    }
 
                     case 5: {
-                        fprintf(f, "CALLC\t%d", INT);
+                        int arg_number = INT;
+                        fprintf(f, "CALLC\t%d", arg_number);
+                        aint offset = callc_function(arg_number);
+                        operand_push((aint) ip, POINTER);
+                        ip = bf->code_ptr + offset;
                         break;
                     }
 
@@ -570,13 +644,14 @@ void disassemble(FILE *f, bytefile *bf) {
                         fprintf(f, "%d", number_of_args);
 
                         fprintf(f, "IP in call\t0x%.8x ", ip - bf->code_ptr);
+                        operand_push(0, VAL);
                         operand_push((aint) ip, POINTER);
                         ip = bf->code_ptr + call_pos;
                         break;
                     }
 
                     case 7: {
-                        char * tag = STRING;
+                        char *tag = STRING;
                         int elem_size = INT;
                         fprintf(f, "TAG\t%s ", tag);
                         fprintf(f, "%d", elem_size);
@@ -606,9 +681,35 @@ void disassemble(FILE *f, bytefile *bf) {
                 }
                 break;
 
-            case 6:
+            case 6: {
                 fprintf(f, "PATT\t%s", pats[l]);
+                switch (l) {
+                    case 0: {
+                        aint x = operand_top(POINTER);
+                        operand_pop();
+                        aint y = operand_top(POINTER);
+                        operand_pop();
+                        operand_push((aint) UNBOX(Bstring_patt((void *)x, (void *)y)), VAL);
+                        break;
+                    }
+                    case 1: {
+                        aint x = operand_top(POINTER);
+                        operand_pop();
+                        operand_push((aint) UNBOX(Bstring_tag_patt((void *)x)), VAL);
+                        break;
+                    }
+                    case 6: {
+                        aint x = operand_top(POINTER);
+                        operand_pop();
+                        aint res = UNBOX(Bclosure_tag_patt((void *) x));
+                        operand_push(res, VAL);
+                        break;
+                    }
+                    default:
+                        failure("No patt for: %d", l);
+                }
                 break;
+            }
 
             case 7: {
                 switch (l) {
@@ -636,6 +737,8 @@ void disassemble(FILE *f, bytefile *bf) {
 
                     case 3:
                         fprintf(f, "CALL\tLstring");
+                        aint *SP = &g_stack.operand_stack[g_stack.stack_top_index];
+                        operand_push((aint) Lstring(SP), POINTER);
                         break;
 
                     case 4: {
@@ -679,6 +782,8 @@ void dump_file(FILE *f, bytefile *bf) {
 
     fprintf(f, "Code:\n");
 
+    // closure for first begin
+    operand_push(0, POINTER);
     // return address for first begin
     operand_push(0, POINTER);
     disassemble(f, bf);
