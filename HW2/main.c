@@ -2,20 +2,17 @@
 
 #include <string.h>
 #include <stdio.h>
-#include <errno.h>
 #include <stdlib.h>
 #include "runtime/runtime.h"
 #include "runtime/gc.h"
 
 
-void *__start_custom_data;
-void *__stop_custom_data;
 #define STACK_SIZE 20000
 
 typedef struct {
     aint operand_stack[STACK_SIZE];
-    size_t stack_top_index; // points to next free slot; stack grows downwards (from end to start)
-    size_t ebp_index;
+    aint stack_top_index; // points to next free slot
+    aint ebp_index;
 } OperandStack;
 
 OperandStack g_stack = {.stack_top_index = STACK_SIZE, .ebp_index = 0};
@@ -62,9 +59,6 @@ static aint operand_get(size_t k, ValueType type) {
     }
     aint result = g_stack.operand_stack[k];
     bool is_unboxes = UNBOXED(result);
-    // if (is_unboxes && type == POINTER) {
-    // failure("Expected pointer, but receives VAL\n");
-    // }
     if (!is_unboxes && type == VAL) {
         failure("Expected VAL, but receives POINTER\n");
     }
@@ -75,7 +69,7 @@ static aint operand_get(size_t k, ValueType type) {
     return result;
 }
 
-static void operand_set(size_t k, aint value, ValueType type) {
+static void operand_set(const aint k, aint value, ValueType type) {
     if (k >= STACK_SIZE) {
         failure("operand stack underflow in set operation\n");
     }
@@ -85,7 +79,7 @@ static void operand_set(size_t k, aint value, ValueType type) {
     g_stack.operand_stack[k] = value;
 }
 
-static void store_global(FILE *f, size_t k) {
+static void store_global(FILE *f, const aint k) {
     if (k < 0 || k >= STACK_SIZE) {
         failure("global index out of bounds: %d (size=%d)\n", k, STACK_SIZE);
     }
@@ -93,7 +87,7 @@ static void store_global(FILE *f, size_t k) {
     operand_set(STACK_SIZE - 1 - k, v, UNKNOWN);
 }
 
-static void load_global(FILE *f, size_t k) {
+static void load_global(FILE *f, const aint k) {
     if (k < 0 || k >= STACK_SIZE) {
         failure("global index out of bounds: %d (size=%d)\n", k, STACK_SIZE);
     }
@@ -109,20 +103,37 @@ static aint get_closure_pntr() {
     return closure_pntr;
 }
 
-static aint load_closure(FILE *f, size_t k) {
-    aint closure_pntr = get_closure_pntr();
-    data *closure_data = TO_DATA(closure_pntr);
-    aint res = ((aint *) closure_data->contents)[k + 1];
-
+static void load_closure(const aint k) {
+    const aint closure_pointer = get_closure_pntr();
+    const data *closure_data = TO_DATA(closure_pointer);
+    if (TAG(closure_data->data_header) != CLOSURE_TAG) {
+        failure("Expected closure in store_closure\n");
+    }
+    const aint res = ((aint *) closure_data->contents)[k + 1];
     operand_push(res, UNKNOWN);
 }
 
-static size_t get_local_pos(size_t k) {
-    size_t local_count = operand_get(g_stack.ebp_index - 2, VAL);
+
+static void store_closure(const aint k) {
+    const aint closure_pointer = get_closure_pntr();
+    const data *closure_data = TO_DATA(closure_pointer);
+    if (TAG(closure_data->data_header) != CLOSURE_TAG) {
+        failure("Expected closure in store_closure\n");
+    }
+    const aint len = LEN(closure_data->data_header);
+    if (k >= len) {
+        failure("closure index out of bounds: %zu (len=%zu)\n", k, len);
+    }
+    const aint v = operand_top(UNKNOWN);
+    ((aint *) closure_data->contents)[k + 1] = v;
+}
+
+static aint get_local_pos(const aint k) {
+    const aint local_count = operand_get(g_stack.ebp_index - 2, VAL);
     if (k >= local_count) {
         failure("local index out of bounds: %zu (count=%zu)\n", k, local_count);
     }
-    size_t local_position = g_stack.ebp_index - 3 - k;
+    const aint local_position = g_stack.ebp_index - 3 - k;
 
     if (local_position >= STACK_SIZE) {
         failure("local position out of stack bounds: %zu\n", local_position);
@@ -130,14 +141,14 @@ static size_t get_local_pos(size_t k) {
     return local_position;
 }
 
-static void load_local(size_t k) {
-    size_t local_position = get_local_pos(k);
-    aint v = operand_get(local_position, UNKNOWN);
+static void load_local(const aint k) {
+    const aint local_position = get_local_pos(k);
+    const aint v = operand_get(local_position, UNKNOWN);
     operand_push(v, UNKNOWN);
 }
 
-static void store_local(size_t k) {
-    size_t local_position = get_local_pos(k);
+static void store_local(const aint k) {
+    const aint local_position = get_local_pos(k);
     const aint v = operand_top(UNKNOWN);
     operand_set(local_position, v, UNKNOWN);
 }
@@ -152,12 +163,12 @@ static void load_arg(FILE *f, size_t k) {
     operand_push(v, UNKNOWN);
 }
 
-static void store_arg(size_t k) {
-    size_t arg_count = operand_get(g_stack.ebp_index + 1, VAL);
+static void store_arg(const aint k) {
+    const aint arg_count = operand_get(g_stack.ebp_index + 1, VAL);
     if (k >= arg_count) {
         failure("argument index out of bounds: %zu (count=%zu)\n", k, arg_count);
     }
-    size_t arg_position = g_stack.ebp_index + 3 + k;
+    const aint arg_position = g_stack.ebp_index + 3 + k;
     const aint v = operand_top(UNKNOWN);
     operand_set(arg_position, v, UNKNOWN);
 }
@@ -168,7 +179,7 @@ static void store_arg(size_t k) {
 // [top - 1] = args[1]
 // [top - 2] = args[0]
 
-void begin_function(FILE *f, int num_args, int local_size) {
+void begin_function(FILE *f, const int num_args, const int local_size) {
     // Shema: the number of arguments, EBP, return address, local vars number, local vars
     //   [ebp + 2 ...] = arguments
     //   [ebp + 2] == closure/empty
@@ -178,10 +189,9 @@ void begin_function(FILE *f, int num_args, int local_size) {
     //   [ebp-2] = local_size
     //   [ebp-3 - i] = local i (0..local_size-1)
 
-    size_t old_ebp = g_stack.ebp_index;
+    const aint old_ebp = g_stack.ebp_index;
 
-    aint ret_ip = operand_top(POINTER);
-    fprintf(f, "Return in begin fun \t0x%.8x", ret_ip);
+    const aint ret_ip = operand_top(POINTER);
     operand_pop();
 
     operand_push(num_args, VAL);
@@ -195,12 +205,12 @@ void begin_function(FILE *f, int num_args, int local_size) {
     }
 }
 
-static aint end_function(FILE *f) {
-    aint stack_top = operand_top(UNKNOWN);
-    size_t ebp = g_stack.ebp_index;
-    aint ret_ip = operand_get(g_stack.ebp_index - 1, POINTER); // return address saved by CALL
-    size_t old_ebp = operand_get(ebp, VAL);
-    size_t num_args = operand_get(ebp + 1, VAL);
+static aint end_function() {
+    const aint stack_top = operand_top(UNKNOWN);
+    const aint ebp = g_stack.ebp_index;
+    const aint ret_ip = operand_get(g_stack.ebp_index - 1, POINTER); // return address saved by CALL
+    const aint old_ebp = operand_get(ebp, VAL);
+    const aint num_args = operand_get(ebp + 1, VAL);
 
     g_stack.stack_top_index = ebp + 3 + num_args;
     g_stack.ebp_index = old_ebp;
@@ -226,7 +236,7 @@ static void reverse_last_el(int el_count) {
     }
 }
 
-static void barray_function(int n) {
+static void barray_function(const int n) {
     if (n < 0) {
         failure("Barray: invalid size %d\n", n);
     }
@@ -234,25 +244,25 @@ static void barray_function(int n) {
     reverse_last_el(n);
     aint *SP = &g_stack.operand_stack[g_stack.stack_top_index];
 
-    aint arr = (aint) Barray(SP, BOX(n));
-    g_stack.stack_top_index += (size_t) n;
+    const aint arr = (aint) Barray(SP, BOX(n));
+    g_stack.stack_top_index += n;
     operand_push(arr, POINTER);
 }
 
-static void sexp_function(char *tag, int elem_size) {
-    aint hash_tag = UNBOX(LtagHash(tag));
+static void sexp_function(char *tag, const int elem_size) {
+    const aint hash_tag = UNBOX(LtagHash(tag));
     operand_push(hash_tag, VAL);
 
     reverse_last_el(elem_size + 1);
     aint *SP = &g_stack.operand_stack[g_stack.stack_top_index];
-    aint result = (aint) Bsexp(SP, BOX(elem_size + 1));
+    const aint result = (aint) Bsexp(SP, BOX(elem_size + 1));
     g_stack.stack_top_index += elem_size + 1;
     operand_push(result, POINTER);
 }
 
-static void closure_function(int code_pntr, int arg_number) {
+static void closure_function(const int code_pointer, const int arg_number) {
     reverse_last_el(arg_number);
-    operand_push(code_pntr, POINTER);
+    operand_push(code_pointer, POINTER);
     aint *SP = &g_stack.operand_stack[g_stack.stack_top_index];
     aint *closure = Bclosure(SP, BOX(arg_number));
 
@@ -261,7 +271,7 @@ static void closure_function(int code_pntr, int arg_number) {
 }
 
 
-static aint callc_function(int arg_number) {
+static aint callc_function(const int arg_number) {
     size_t closure_pos = g_stack.stack_top_index + arg_number;
     if (closure_pos >= STACK_SIZE)
         failure("CALLC: invalid stack layout\n");
@@ -297,7 +307,7 @@ typedef struct {
 } bytefile;
 
 /* Gets a string from a string table by an index */
-char *get_string(bytefile *f, int pos) {
+char *get_string(const bytefile *f, int pos) {
     return &f->string_ptr[pos];
 }
 
@@ -428,7 +438,6 @@ void disassemble(FILE *f, bytefile *bf) {
                         const char *s = STRING;
                         fprintf(f, "STRING\t%s", s);
                         aint res = (aint) Bstring((aint *) &s);
-                        fprintf(f, "In: 0x%.8x\t", res);
                         operand_push(res, POINTER);
                         break;
                     }
@@ -468,8 +477,7 @@ void disassemble(FILE *f, bytefile *bf) {
 
                     case 6: {
                         fprintf(f, "END\t");
-                        aint return_address = end_function(f);
-                        fprintf(f, "0x%.8x:\t\n", (char *) return_address - bf->code_ptr);
+                        aint return_address = end_function();
                         if (return_address == 0) {
                             goto stop;
                         }
@@ -564,7 +572,13 @@ void disassemble(FILE *f, bytefile *bf) {
                     case 3: {
                         int num_args = INT;
                         fprintf(f, "C(%d)", num_args);
-                        load_closure(f, num_args);
+                        if (h == 4) {
+                            store_closure(num_args);
+                        } else if (h == 2) {
+                            load_closure(num_args);
+                        } else {
+                            failure("C is not supported");
+                        }
                         break;
                     }
                     default:
@@ -613,8 +627,9 @@ void disassemble(FILE *f, bytefile *bf) {
                         for (int i = 0; i < n; i++) {
                             switch (BYTE) {
                                 case 0: {
-                                    fprintf(f, "G(%d)", INT);
-                                    failure("G not supported");
+                                    int pos = INT;
+                                    fprintf(f, "G(%d)", pos);
+                                    load_global(f, pos);
                                     break;
                                 }
                                 case 1: {
@@ -632,7 +647,7 @@ void disassemble(FILE *f, bytefile *bf) {
                                 case 3: {
                                     int pos = INT;
                                     fprintf(f, "C(%d)", pos);
-                                    load_closure(f, pos);
+                                    load_closure(pos);
                                     break;
                                 }
                                 default:
@@ -658,7 +673,7 @@ void disassemble(FILE *f, bytefile *bf) {
                         fprintf(f, "CALL\t0x%.8x ", call_pos);
                         fprintf(f, "%d", number_of_args);
                         reverse_last_el(number_of_args);
-                        fprintf(f, "IP in call\t0x%.8x ", ip - bf->code_ptr);
+                        // fprintf(f, "IP in call\t0x%.8x ", ip - bf->code_ptr);
                         operand_push(0, VAL);
                         operand_push((aint) ip, POINTER);
                         ip = bf->code_ptr + call_pos;
@@ -678,14 +693,21 @@ void disassemble(FILE *f, bytefile *bf) {
                         break;
                     }
 
-                    case 8:
-                        fprintf(f, "ARRAY\t%d", INT);
-                        break;
+                    case 8: {
+                        int el_size = INT;
+                        fprintf(f, "ARRAY\t%d", el_size);
 
-                    case 9:
+                        aint arr = operand_top(POINTER);
+                        operand_push(UNBOX(Barray_patt((void *) arr, BOX(el_size))), VAL);
+                        break;
+                    }
+
+                    case 9: {
                         fprintf(f, "FAIL\t%d", INT);
+                        failure("FAIL is not supported");
                         fprintf(f, "%d", INT);
                         break;
+                    }
 
                     case 10:
                         fprintf(f, "LINE\t%d", INT);
@@ -700,23 +722,48 @@ void disassemble(FILE *f, bytefile *bf) {
                 fprintf(f, "PATT\t%s", pats[l]);
                 switch (l) {
                     case 0: {
-                        aint x = operand_top(POINTER);
+                        aint str = operand_top(POINTER);
                         operand_pop();
                         aint y = operand_top(POINTER);
                         operand_pop();
-                        operand_push((aint) UNBOX(Bstring_patt((void *)x, (void *)y)), VAL);
+                        operand_push(UNBOX(Bstring_patt((void *)str, (void *)y)), VAL);
                         break;
                     }
                     case 1: {
-                        aint x = operand_top(POINTER);
+                        aint el = operand_top(POINTER);
                         operand_pop();
-                        operand_push((aint) UNBOX(Bstring_tag_patt((void *)x)), VAL);
+                        operand_push(UNBOX(Bstring_tag_patt((void *)el)), VAL);
+                        break;
+                    }
+                    case 2: {
+                        aint el = operand_top(POINTER);
+                        operand_pop();
+                        operand_push(UNBOX(Barray_tag_patt((void *)el)), VAL);
+                        break;
+                    }
+                    case 3: {
+                        aint el = operand_top(UNKNOWN);
+                        operand_pop();
+                        operand_push(UNBOX(Bsexp_tag_patt((void *)el)), VAL);
+                        break;
+                    }
+                    case 4: {
+                        aint el = operand_top(UNKNOWN);
+                        operand_pop();
+                        operand_push(UNBOX(Bboxed_patt((void *)el)), VAL);
+                        break;
+                    }
+                    case 5: {
+                        aint el = operand_top(UNKNOWN);
+                        operand_pop();
+                        aint res = UNBOX(Bunboxed_patt((void *)el));
+                        operand_push(res, VAL);
                         break;
                     }
                     case 6: {
-                        aint x = operand_top(POINTER);
+                        aint el = operand_top(POINTER);
                         operand_pop();
-                        aint res = UNBOX(Bclosure_tag_patt((void *) x));
+                        aint res = UNBOX(Bclosure_tag_patt((void *) el));
                         operand_push(res, VAL);
                         break;
                     }
@@ -745,9 +792,8 @@ void disassemble(FILE *f, bytefile *bf) {
                         fprintf(f, "CALL\tLlength");
                         aint out = operand_top(POINTER);
                         operand_pop();
-                        fprintf(f, "Out: 0x%.8x\t", out);
-                        aint res = UNBOX(Llength((void *) out));
-                        operand_push(res, VAL);
+                        aint res = Llength((void *) out);
+                        operand_push(res, UNKNOWN);
                         break;
 
                     case 3:
@@ -814,7 +860,7 @@ void disable_stderr() {
 
 int main(int argc, char *argv[]) {
     // stack_top < stack_bottom
-    // disable_stderr();
+    disable_stderr();
     __gc_init();
     size_t stack_top = (size_t) &g_stack.operand_stack[0];
     size_t stack_bottom = (size_t) &g_stack.operand_stack[STACK_SIZE];

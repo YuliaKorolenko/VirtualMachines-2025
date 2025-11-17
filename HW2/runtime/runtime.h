@@ -51,5 +51,7 @@ extern aint Bsexp_tag_patt (void *x);
 extern aint Bboxed_patt (void *x);
 extern aint Bunboxed_patt (void *x);
 extern aint Bclosure_tag_patt (void *x);
+extern aint Bsexp_tag_patt (void *x);
+extern aint Barray_patt (void *d, aint n);
 
 #endif
