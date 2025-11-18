@@ -494,40 +494,60 @@ void disassemble(FILE *f, bytefile *bf) {
                     aint left = operand_top(VAL);
                     operand_pop();
 
-                    left = BOX(left);
-                    right = BOX(right);
-                    aint res = 0;
+                    aint result = 0;
                     switch (l) {
-                        case BINOP_ADD: res = Ls__Infix_43((void *) left, (void *) right);
-                            break; // +
-                        case BINOP_SUB: res = Ls__Infix_45((void *) left, (void *) right);
-                            break; // -
-                        case BINOP_MUL: res = Ls__Infix_42((void *) left, (void *) right);
-                            break; // *
-                        case BINOP_DIV: res = Ls__Infix_47((void *) left, (void *) right);
-                            break; // /
-                        case BINOP_MOD: res = Ls__Infix_37((void *) left, (void *) right);
-                            break; // %
-                        case BINOP_LT: res = Ls__Infix_60((void *) left, (void *) right);
-                            break; // <
-                        case BINOP_LE: res = Ls__Infix_6061((void *) left, (void *) right);
-                            break; // <=
-                        case BINOP_GT: res = Ls__Infix_62((void *) left, (void *) right);
-                            break; // >
-                        case BINOP_GE: res = Ls__Infix_6261((void *) left, (void *) right);
-                            break; // >=
-                        case BINOP_EQ: res = Ls__Infix_6161((void *) left, (void *) right);
-                            break; // ==
-                        case BINOP_NE: res = Ls__Infix_3361((void *) left, (void *) right);
-                            break; // !=
-                        case BINOP_AND: res = Ls__Infix_3838((void *) left, (void *) right);
-                            break; // &&
-                        case BINOP_OR: res = Ls__Infix_3333((void *) left, (void *) right);
-                            break; // !!
-                        default: FAIL;
+                        case BINOP_ADD:
+                            result = left + right;
+                            break;
+                        case BINOP_SUB:
+                            result = left - right;
+                            break;
+                        case BINOP_MUL:
+                            result = left * right;
+                            break;
+                        case BINOP_DIV:
+                            if (right == 0) {
+                                failure("ERROR at 0x%.8x, division by zero (%d/%d)", ip - bf->code_ptr - 1, left,
+                                        right);
+                            }
+                            result = left / right;
+                            break;
+                        case BINOP_MOD:
+                            if (right == 0) {
+                                failure("ERROR at 0x%.8x, division by zero (mod) (%d/%d)", ip - bf->code_ptr - 1, left,
+                                        right);
+                            }
+                            result = left % right;
+                            break;
+                        case BINOP_LT:
+                            result = left < right ? 1 : 0;
+                            break;
+                        case BINOP_LE:
+                            result = left <= right ? 1 : 0;
+                            break;
+                        case BINOP_GT:
+                            result = left > right ? 1 : 0;
+                            break;
+                        case BINOP_GE:
+                            result = left >= right ? 1 : 0;
+                            break;
+                        case BINOP_EQ:
+                            result = left == right ? 1 : 0;
+                            break;
+                        case BINOP_NE:
+                            result = left != right ? 1 : 0;
+                            break;
+                        case BINOP_AND:
+                            result = left && right ? 1 : 0;
+                            break;
+                        case BINOP_OR:
+                            result = left || right ? 1 : 0;
+                            break;
+                        default:
+                            FAIL;
                     }
 
-                    operand_push(UNBOX(res), VAL);
+                    operand_push(result, VAL);
                 }
                 break;
 
