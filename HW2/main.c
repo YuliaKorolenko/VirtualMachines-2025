@@ -324,7 +324,6 @@ int get_public_offset(bytefile *f, int i) {
 /* Reads a binary bytecode file by name and unpacks it */
 bytefile *read_file(char *fname) {
     FILE *f = fopen(fname, "rb");
-    long size;
     bytefile *file;
 
     if (f == 0) {
@@ -335,7 +334,13 @@ bytefile *read_file(char *fname) {
         failure("%s\n", strerror(errno));
     }
 
-    file = (bytefile *) malloc(sizeof(int) * 4 + (size = ftell(f)));
+    const long size = ftell(f);
+
+    const long MAX_SIZE = 2LL * 1024 * 1024 * 1024;
+    if (size > MAX_SIZE)
+        failure("Bytecode file too large: %ld", size);
+
+    file = (bytefile *) malloc(sizeof(int) * 4 + size);
 
     if (file == 0) {
         failure("*** FAILURE: unable to allocate memory.\n");
