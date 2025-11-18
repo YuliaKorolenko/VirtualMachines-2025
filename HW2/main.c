@@ -23,6 +23,80 @@ typedef enum {
     UNKNOWN
 } ValueType;
 
+typedef enum OpGroup {
+    OP_BINOP = 0,
+    OP_MISC = 1,
+    OP_LD = 2,
+    OP_LDA = 3,
+    OP_ST = 4,
+    OP_CTRL = 5,
+    OP_PATT = 6,
+    OP_RT = 7,
+    OP_END = 15
+};
+
+// (low nibble)
+typedef enum LowOp {
+    BINOP_INVALID = 0,
+    BINOP_ADD = 1,
+    BINOP_SUB = 2,
+    BINOP_MUL = 3,
+    BINOP_DIV = 4,
+    BINOP_MOD = 5,
+    BINOP_LT = 6,
+    BINOP_LE = 7,
+    BINOP_GT = 8,
+    BINOP_GE = 9,
+    BINOP_EQ = 10,
+    BINOP_NE = 11,
+    BINOP_AND = 12,
+    BINOP_OR = 13,
+
+    MI_CONST = 0,
+    MI_STRING = 1,
+    MI_SEXP = 2,
+    MI_STI = 3,
+    MI_STA = 4,
+    MI_JMP = 5,
+    MI_END = 6,
+    MI_RET = 7,
+    MI_DROP = 8,
+    MI_DUP = 9,
+    MI_SWAP = 10,
+    MI_ELEM = 11,
+
+    LDS_G = 0,
+    LDS_L = 1,
+    LDS_A = 2,
+    LDS_C = 3,
+
+    CTRL_CJMPZ = 0,
+    CTRL_CJMPNZ = 1,
+    CTRL_BEGIN = 2,
+    CTRL_CBEGIN = 3,
+    CTRL_CLOSURE = 4,
+    CTRL_CALLC = 5,
+    CTRL_CALL = 6,
+    CTRL_TAG = 7,
+    CTRL_ARRAY = 8,
+    CTRL_FAIL = 9,
+    CTRL_LINE = 10,
+
+    PATT_STRING = 0,
+    PATT_STRING_TAG = 1,
+    PATT_ARRAY_TAG = 2,
+    PATT_SEXP_TAG = 3,
+    PATT_BOXED = 4,
+    PATT_UNBOXED = 5,
+    PATT_CLOSURE_TAG = 6,
+
+    RT_READ = 0,
+    RT_WRITE = 1,
+    RT_LENGTH = 2,
+    RT_STRING = 3,
+    RT_BARRAY = 4
+};
+
 static void operand_push(aint value, const ValueType type) {
     if (g_stack.stack_top_index == 0) {
         failure("operand stack overflow\n");
@@ -392,9 +466,9 @@ bytefile *read_file(char *fname) {
 /* Disassembles the bytecode pool */
 void disassemble(FILE *f, bytefile *bf) {
     char *ip = bf->code_ptr;
-    static const char* const ops[] = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
-    static const char* const pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
-    static const char* const lds[] = {"LD", "LDA", "ST"};
+    static const char *const ops[] = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
+    static const char *const pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
+    static const char *const lds[] = {"LD", "LDA", "ST"};
 
 #define INT get_int(bf, &ip)
 #define BYTE get_byte(bf, &ip)
@@ -408,13 +482,13 @@ void disassemble(FILE *f, bytefile *bf) {
         fprintf(f, "0x%.8x:\t", ip - bf->code_ptr - 1);
 
         switch (h) {
-            case 15:
+            case OP_END:
                 goto stop;
 
             /* BINOP */
-            case 0:
-                fprintf(f, "BINOP\t%s", (l >= 1 && l <= 13) ? ops[l - 1] : "<invalid>"); {
-                    if (l < 1 || l > 13) { FAIL; }
+            case OP_BINOP:
+                fprintf(f, "BINOP\t%s", (l >= BINOP_ADD && l <= BINOP_OR) ? ops[l - 1] : "<invalid>"); {
+                    if (l < BINOP_ADD || l > BINOP_OR) { FAIL; }
                     aint right = operand_top(VAL);
                     operand_pop();
                     aint left = operand_top(VAL);
@@ -424,31 +498,31 @@ void disassemble(FILE *f, bytefile *bf) {
                     right = BOX(right);
                     aint res = 0;
                     switch (l) {
-                        case 1: res = Ls__Infix_43((void *) left, (void *) right);
+                        case BINOP_ADD: res = Ls__Infix_43((void *) left, (void *) right);
                             break; // +
-                        case 2: res = Ls__Infix_45((void *) left, (void *) right);
+                        case BINOP_SUB: res = Ls__Infix_45((void *) left, (void *) right);
                             break; // -
-                        case 3: res = Ls__Infix_42((void *) left, (void *) right);
+                        case BINOP_MUL: res = Ls__Infix_42((void *) left, (void *) right);
                             break; // *
-                        case 4: res = Ls__Infix_47((void *) left, (void *) right);
+                        case BINOP_DIV: res = Ls__Infix_47((void *) left, (void *) right);
                             break; // /
-                        case 5: res = Ls__Infix_37((void *) left, (void *) right);
+                        case BINOP_MOD: res = Ls__Infix_37((void *) left, (void *) right);
                             break; // %
-                        case 6: res = Ls__Infix_60((void *) left, (void *) right);
+                        case BINOP_LT: res = Ls__Infix_60((void *) left, (void *) right);
                             break; // <
-                        case 7: res = Ls__Infix_6061((void *) left, (void *) right);
+                        case BINOP_LE: res = Ls__Infix_6061((void *) left, (void *) right);
                             break; // <=
-                        case 8: res = Ls__Infix_62((void *) left, (void *) right);
+                        case BINOP_GT: res = Ls__Infix_62((void *) left, (void *) right);
                             break; // >
-                        case 9: res = Ls__Infix_6261((void *) left, (void *) right);
+                        case BINOP_GE: res = Ls__Infix_6261((void *) left, (void *) right);
                             break; // >=
-                        case 10: res = Ls__Infix_6161((void *) left, (void *) right);
+                        case BINOP_EQ: res = Ls__Infix_6161((void *) left, (void *) right);
                             break; // ==
-                        case 11: res = Ls__Infix_3361((void *) left, (void *) right);
+                        case BINOP_NE: res = Ls__Infix_3361((void *) left, (void *) right);
                             break; // !=
-                        case 12: res = Ls__Infix_3838((void *) left, (void *) right);
+                        case BINOP_AND: res = Ls__Infix_3838((void *) left, (void *) right);
                             break; // &&
-                        case 13: res = Ls__Infix_3333((void *) left, (void *) right);
+                        case BINOP_OR: res = Ls__Infix_3333((void *) left, (void *) right);
                             break; // !!
                         default: FAIL;
                     }
@@ -457,16 +531,16 @@ void disassemble(FILE *f, bytefile *bf) {
                 }
                 break;
 
-            case 1:
+            case OP_MISC:
                 switch (l) {
-                    case 0: {
+                    case MI_CONST: {
                         int cnst = INT;
                         fprintf(f, "CONST\t%d", cnst);
                         operand_push(cnst, VAL);
                         break;
                     }
 
-                    case 1: {
+                    case MI_STRING: {
                         const char *s = STRING;
                         fprintf(f, "STRING\t%s", s);
                         aint res = (aint) Bstring((aint *) &s);
@@ -474,7 +548,7 @@ void disassemble(FILE *f, bytefile *bf) {
                         break;
                     }
 
-                    case 2: {
+                    case MI_SEXP: {
                         char *tag = STRING;
                         int elem_size = INT;
                         fprintf(f, "SEXP\t%s ", tag);
@@ -483,11 +557,11 @@ void disassemble(FILE *f, bytefile *bf) {
                         break;
                     }
 
-                    case 3:
+                    case MI_STI:
                         fprintf(f, "STI");
                         break;
 
-                    case 4: {
+                    case MI_STA: {
                         fprintf(f, "STA");
                         const aint value = operand_top(UNKNOWN);
                         operand_pop();
@@ -500,7 +574,7 @@ void disassemble(FILE *f, bytefile *bf) {
                         break;
                     }
 
-                    case 5: {
+                    case MI_JMP: {
                         aint jump_address = INT;
                         fprintf(f, "JMP\t0x%.8x", jump_address);
                         if (bf->code_ptr + jump_address > bf->code_end) {
@@ -510,7 +584,7 @@ void disassemble(FILE *f, bytefile *bf) {
                         break;
                     }
 
-                    case 6: {
+                    case MI_END: {
                         fprintf(f, "END\t");
                         aint return_address = end_function();
                         if (return_address == 0) {
@@ -523,22 +597,22 @@ void disassemble(FILE *f, bytefile *bf) {
                         break;
                     }
 
-                    case 7:
+                    case MI_RET:
                         fprintf(f, "RET");
                         break;
 
-                    case 8:
+                    case MI_DROP:
                         fprintf(f, "DROP");
                         operand_pop();
                         break;
 
-                    case 9: {
+                    case MI_DUP: {
                         fprintf(f, "DUP");
                         operand_push(operand_top(UNKNOWN), UNKNOWN);
                         break;
                     }
 
-                    case 10: {
+                    case MI_SWAP: {
                         fprintf(f, "SWAP");
                         aint a = operand_top(UNKNOWN);
                         operand_pop();
@@ -549,7 +623,7 @@ void disassemble(FILE *f, bytefile *bf) {
                         break;
                     }
 
-                    case 11: {
+                    case MI_ELEM: {
                         fprintf(f, "ELEM");
                         aint b = operand_top(VAL);
                         operand_pop();
@@ -566,28 +640,28 @@ void disassemble(FILE *f, bytefile *bf) {
                 }
                 break;
 
-            case 2:
-            case 3:
-            case 4:
+            case OP_LD:
+            case OP_LDA:
+            case OP_ST:
                 fprintf(f, "%s\t", lds[h - 2]);
                 switch (l) {
-                    case 0: {
+                    case LDS_G: {
                         int pos = INT;
                         fprintf(f, "G(%d)", pos);
-                        if (h == 4) {
+                        if (h == OP_ST) {
                             store_global(pos);
-                        } else if (h == 2) {
+                        } else if (h == OP_LD) {
                             load_global(pos);
                         } else {
                             failure("G is not supported");
                         }
                     }
                     break;
-                    case 1: {
+                    case LDS_L: {
                         int l_number = INT;
-                        if (h == 4) {
+                        if (h == OP_ST) {
                             store_local(l_number);
-                        } else if (h == 2) {
+                        } else if (h == OP_LD) {
                             load_local(l_number);
                         } else {
                             failure("L is not supported");
@@ -595,24 +669,24 @@ void disassemble(FILE *f, bytefile *bf) {
                         fprintf(f, "L(%d)", l_number);
                         break;
                     }
-                    case 2: {
+                    case LDS_A: {
                         int arg_number = INT;
                         fprintf(f, "A(%d)", arg_number);
-                        if (h == 4) {
+                        if (h == OP_ST) {
                             store_arg(arg_number);
-                        } else if (h == 2) {
+                        } else if (h == OP_LD) {
                             load_arg(arg_number);
                         } else {
                             failure("A is not supported");
                         }
                         break;
                     }
-                    case 3: {
+                    case LDS_C: {
                         int num_args = INT;
                         fprintf(f, "C(%d)", num_args);
-                        if (h == 4) {
+                        if (h == OP_ST) {
                             store_closure(num_args);
-                        } else if (h == 2) {
+                        } else if (h == OP_LD) {
                             load_closure(num_args);
                         } else {
                             failure("C is not supported");
@@ -624,9 +698,9 @@ void disassemble(FILE *f, bytefile *bf) {
                 }
                 break;
 
-            case 5:
+            case OP_CTRL:
                 switch (l) {
-                    case 0: {
+                    case CTRL_CJMPZ: {
                         int target = INT;
                         fprintf(f, "CJMPz\t0x%.8x", target);
                         aint cond = operand_top(VAL);
@@ -640,7 +714,7 @@ void disassemble(FILE *f, bytefile *bf) {
                         break;
                     }
 
-                    case 1: {
+                    case CTRL_CJMPNZ: {
                         int target = INT;
                         fprintf(f, "CJMPnz\t0x%.8x", target);
                         aint cond = operand_top(VAL);
@@ -654,8 +728,8 @@ void disassemble(FILE *f, bytefile *bf) {
                         break;
                     }
 
-                    case 3:
-                    case 2: {
+                    case CTRL_CBEGIN:
+                    case CTRL_BEGIN: {
                         int num_args = INT;
                         int local_size = INT;
                         fprintf(f, "BEGIN\t%d ", num_args); // + CBEGIN
@@ -664,31 +738,31 @@ void disassemble(FILE *f, bytefile *bf) {
                         break;
                     }
 
-                    case 4: {
+                    case CTRL_CLOSURE: {
                         int code_pntr = INT;
                         int n = INT;
                         fprintf(f, "CLOSURE\t0x%.8x ", code_pntr);
                         for (int i = 0; i < n; i++) {
                             switch (BYTE) {
-                                case 0: {
+                                case LDS_G: {
                                     int pos = INT;
                                     fprintf(f, "G(%d)", pos);
                                     load_global(pos);
                                     break;
                                 }
-                                case 1: {
+                                case LDS_L: {
                                     int pos = INT;
                                     fprintf(f, "L(%d)", pos);
                                     load_local(pos);
                                     break;
                                 }
-                                case 2: {
+                                case LDS_A: {
                                     int pos = INT;
                                     fprintf(f, "A(%d)", pos);
                                     load_arg(pos);
                                     break;
                                 }
-                                case 3: {
+                                case LDS_C: {
                                     int pos = INT;
                                     fprintf(f, "C(%d)", pos);
                                     load_closure(pos);
@@ -702,7 +776,7 @@ void disassemble(FILE *f, bytefile *bf) {
                         break;
                     }
 
-                    case 5: {
+                    case CTRL_CALLC: {
                         int arg_number = INT;
                         fprintf(f, "CALLC\t%d", arg_number);
                         aint offset = callc_function(arg_number);
@@ -711,7 +785,7 @@ void disassemble(FILE *f, bytefile *bf) {
                         break;
                     }
 
-                    case 6: {
+                    case CTRL_CALL: {
                         int call_pos = INT;
                         int number_of_args = INT;
                         fprintf(f, "CALL\t0x%.8x ", call_pos);
@@ -724,7 +798,7 @@ void disassemble(FILE *f, bytefile *bf) {
                         break;
                     }
 
-                    case 7: {
+                    case CTRL_TAG: {
                         char *tag = STRING;
                         int elem_size = INT;
                         fprintf(f, "TAG\t%s ", tag);
@@ -737,7 +811,7 @@ void disassemble(FILE *f, bytefile *bf) {
                         break;
                     }
 
-                    case 8: {
+                    case CTRL_ARRAY: {
                         int el_size = INT;
                         fprintf(f, "ARRAY\t%d", el_size);
 
@@ -746,14 +820,14 @@ void disassemble(FILE *f, bytefile *bf) {
                         break;
                     }
 
-                    case 9: {
+                    case CTRL_FAIL: {
                         fprintf(f, "FAIL\t%d", INT);
                         fprintf(f, "%d", INT);
                         failure("FAIL");
                         break;
                     }
 
-                    case 10:
+                    case CTRL_LINE:
                         fprintf(f, "LINE\t%d", INT);
                         break;
 
@@ -762,10 +836,10 @@ void disassemble(FILE *f, bytefile *bf) {
                 }
                 break;
 
-            case 6: {
+            case OP_PATT: {
                 fprintf(f, "PATT\t%s", pats[l]);
                 switch (l) {
-                    case 0: {
+                    case PATT_STRING: {
                         aint str = operand_top(POINTER);
                         operand_pop();
                         aint y = operand_top(POINTER);
@@ -773,38 +847,38 @@ void disassemble(FILE *f, bytefile *bf) {
                         operand_push(UNBOX(Bstring_patt((void *)str, (void *)y)), VAL);
                         break;
                     }
-                    case 1: {
+                    case PATT_STRING_TAG: {
                         aint el = operand_top(POINTER);
                         operand_pop();
                         operand_push(UNBOX(Bstring_tag_patt((void *)el)), VAL);
                         break;
                     }
-                    case 2: {
+                    case PATT_ARRAY_TAG: {
                         aint el = operand_top(POINTER);
                         operand_pop();
                         operand_push(UNBOX(Barray_tag_patt((void *)el)), VAL);
                         break;
                     }
-                    case 3: {
+                    case PATT_SEXP_TAG: {
                         aint el = operand_top(UNKNOWN);
                         operand_pop();
                         operand_push(UNBOX(Bsexp_tag_patt((void *)el)), VAL);
                         break;
                     }
-                    case 4: {
+                    case PATT_BOXED: {
                         aint el = operand_top(UNKNOWN);
                         operand_pop();
                         operand_push(UNBOX(Bboxed_patt((void *)el)), VAL);
                         break;
                     }
-                    case 5: {
+                    case PATT_UNBOXED: {
                         aint el = operand_top(UNKNOWN);
                         operand_pop();
                         aint res = UNBOX(Bunboxed_patt((void *)el));
                         operand_push(res, VAL);
                         break;
                     }
-                    case 6: {
+                    case PATT_CLOSURE_TAG: {
                         aint el = operand_top(POINTER);
                         operand_pop();
                         aint res = UNBOX(Bclosure_tag_patt((void *) el));
@@ -817,22 +891,22 @@ void disassemble(FILE *f, bytefile *bf) {
                 break;
             }
 
-            case 7: {
+            case OP_RT: {
                 switch (l) {
-                    case 0:
+                    case RT_READ:
                         fprintf(f, "CALL\tLread");
                         aint in = Lread();
                         operand_push(UNBOX(in), VAL);
                         break;
 
-                    case 1: {
+                    case RT_WRITE: {
                         fprintf(f, "CALL\tLwrite");
                         aint out = operand_top(VAL);
                         Lwrite(BOX(out));
                         break;
                     }
 
-                    case 2:
+                    case RT_LENGTH:
                         fprintf(f, "CALL\tLlength");
                         aint out = operand_top(POINTER);
                         operand_pop();
@@ -840,13 +914,13 @@ void disassemble(FILE *f, bytefile *bf) {
                         operand_push(res, UNKNOWN);
                         break;
 
-                    case 3:
+                    case RT_STRING:
                         fprintf(f, "CALL\tLstring");
                         aint *SP = &g_stack.operand_stack[g_stack.stack_top_index];
                         operand_push((aint) Lstring(SP), POINTER);
                         break;
 
-                    case 4: {
+                    case RT_BARRAY: {
                         int size = INT;
                         fprintf(f, "CALL\tBarray\t%d", size);
                         barray_function(size);
