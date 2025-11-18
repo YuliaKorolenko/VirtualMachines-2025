@@ -476,7 +476,7 @@ void disassemble(FILE *f, bytefile *bf) {
 #define STRING get_string(bf, INT)
 #define FAIL failure("ERROR: invalid opcode %d-%d\n", h, l)
     do {
-        char x = BYTE,
+        unsigned char x = BYTE,
                 h = (x & 0xF0) >> 4,
                 l = x & 0x0F;
 
