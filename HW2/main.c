@@ -23,7 +23,7 @@ typedef enum {
     UNKNOWN
 } ValueType;
 
-static void operand_push(aint value, ValueType type) {
+static void operand_push(aint value, const ValueType type) {
     if (g_stack.stack_top_index == 0) {
         failure("operand stack overflow\n");
     }
@@ -34,7 +34,7 @@ static void operand_push(aint value, ValueType type) {
     g_stack.operand_stack[--g_stack.stack_top_index] = value;
 }
 
-static aint operand_top(ValueType type) {
+static aint operand_top(const ValueType type) {
     if (g_stack.stack_top_index + 1 >= STACK_SIZE) {
         failure("operand stack underflow in top operation\n");
     }
@@ -53,12 +53,12 @@ static void operand_pop(void) {
 }
 
 
-static aint operand_get(size_t k, ValueType type) {
+static aint operand_get(const size_t k, const ValueType type) {
     if (k >= STACK_SIZE) {
         failure("operand stack underflow in get operation\n");
     }
     aint result = g_stack.operand_stack[k];
-    bool is_unboxes = UNBOXED(result);
+    const bool is_unboxes = UNBOXED(result);
     if (!is_unboxes && type == VAL) {
         failure("Expected VAL, but receives POINTER\n");
     }
@@ -69,7 +69,7 @@ static aint operand_get(size_t k, ValueType type) {
     return result;
 }
 
-static void operand_set(const aint k, aint value, ValueType type) {
+static void operand_set(const size_t k, aint value, const ValueType type) {
     if (k >= STACK_SIZE) {
         failure("operand stack underflow in set operation\n");
     }
@@ -79,32 +79,32 @@ static void operand_set(const aint k, aint value, ValueType type) {
     g_stack.operand_stack[k] = value;
 }
 
-static void store_global(FILE *f, const aint k) {
-    if (k < 0 || k >= STACK_SIZE) {
+static void store_global(const size_t k) {
+    if (k >= STACK_SIZE) {
         failure("global index out of bounds: %d (size=%d)\n", k, STACK_SIZE);
     }
     const aint v = operand_top(UNKNOWN);
     operand_set(STACK_SIZE - 1 - k, v, UNKNOWN);
 }
 
-static void load_global(FILE *f, const aint k) {
-    if (k < 0 || k >= STACK_SIZE) {
+static void load_global(const size_t k) {
+    if (k >= STACK_SIZE) {
         failure("global index out of bounds: %d (size=%d)\n", k, STACK_SIZE);
     }
     const aint v = operand_get(STACK_SIZE - 1 - k, UNKNOWN);
     operand_push(v, UNKNOWN);
 }
 
-static aint get_closure_pntr() {
-    aint closure_pntr = operand_get(g_stack.ebp_index + 2, POINTER);
-    if (TAG(TO_DATA(closure_pntr)->data_header) != CLOSURE_TAG) {
+static aint get_closure_pointer() {
+    aint closure_pointer = operand_get(g_stack.ebp_index + 2, POINTER);
+    if (TAG(TO_DATA(closure_pointer)->data_header) != CLOSURE_TAG) {
         failure("Expected closure\n");
     }
-    return closure_pntr;
+    return closure_pointer;
 }
 
-static void load_closure(const aint k) {
-    const aint closure_pointer = get_closure_pntr();
+static void load_closure(const size_t k) {
+    const aint closure_pointer = get_closure_pointer();
     const data *closure_data = TO_DATA(closure_pointer);
     if (TAG(closure_data->data_header) != CLOSURE_TAG) {
         failure("Expected closure in store_closure\n");
@@ -114,8 +114,8 @@ static void load_closure(const aint k) {
 }
 
 
-static void store_closure(const aint k) {
-    const aint closure_pointer = get_closure_pntr();
+static void store_closure(const size_t k) {
+    const aint closure_pointer = get_closure_pointer();
     const data *closure_data = TO_DATA(closure_pointer);
     if (TAG(closure_data->data_header) != CLOSURE_TAG) {
         failure("Expected closure in store_closure\n");
@@ -128,12 +128,12 @@ static void store_closure(const aint k) {
     ((aint *) closure_data->contents)[k + 1] = v;
 }
 
-static aint get_local_pos(const aint k) {
+static size_t get_local_pos(const size_t k) {
     const aint local_count = operand_get(g_stack.ebp_index - 2, VAL);
     if (k >= local_count) {
         failure("local index out of bounds: %zu (count=%zu)\n", k, local_count);
     }
-    const aint local_position = g_stack.ebp_index - 3 - k;
+    const size_t local_position = g_stack.ebp_index - 3 - k;
 
     if (local_position >= STACK_SIZE) {
         failure("local position out of stack bounds: %zu\n", local_position);
@@ -141,34 +141,34 @@ static aint get_local_pos(const aint k) {
     return local_position;
 }
 
-static void load_local(const aint k) {
-    const aint local_position = get_local_pos(k);
+static void load_local(const size_t k) {
+    const size_t local_position = get_local_pos(k);
     const aint v = operand_get(local_position, UNKNOWN);
     operand_push(v, UNKNOWN);
 }
 
-static void store_local(const aint k) {
-    const aint local_position = get_local_pos(k);
+static void store_local(const size_t k) {
+    const size_t local_position = get_local_pos(k);
     const aint v = operand_top(UNKNOWN);
     operand_set(local_position, v, UNKNOWN);
 }
 
-static void load_arg(FILE *f, size_t k) {
-    size_t arg_count = operand_get(g_stack.ebp_index + 1, VAL);
+static void load_arg(const size_t k) {
+    const size_t arg_count = operand_get(g_stack.ebp_index + 1, VAL);
     if (k >= arg_count) {
         failure("argument index out of bounds: %zu (count=%zu)\n", k, arg_count);
     }
-    size_t arg_position = g_stack.ebp_index + 3 + k;
-    aint v = operand_get(arg_position, UNKNOWN);
+    const size_t arg_position = g_stack.ebp_index + 3 + k;
+    const aint v = operand_get(arg_position, UNKNOWN);
     operand_push(v, UNKNOWN);
 }
 
-static void store_arg(const aint k) {
+static void store_arg(const size_t k) {
     const aint arg_count = operand_get(g_stack.ebp_index + 1, VAL);
     if (k >= arg_count) {
         failure("argument index out of bounds: %zu (count=%zu)\n", k, arg_count);
     }
-    const aint arg_position = g_stack.ebp_index + 3 + k;
+    const size_t arg_position = g_stack.ebp_index + 3 + k;
     const aint v = operand_top(UNKNOWN);
     operand_set(arg_position, v, UNKNOWN);
 }
@@ -179,7 +179,7 @@ static void store_arg(const aint k) {
 // [top - 1] = args[1]
 // [top - 2] = args[0]
 
-void begin_function(FILE *f, const int num_args, const int local_size) {
+void begin_function(const size_t num_args, const size_t local_size) {
     // Shema: the number of arguments, EBP, return address, local vars number, local vars
     //   [ebp + 2 ...] = arguments
     //   [ebp + 2] == closure/empty
@@ -194,11 +194,11 @@ void begin_function(FILE *f, const int num_args, const int local_size) {
     const aint ret_ip = operand_top(POINTER);
     operand_pop();
 
-    operand_push(num_args, VAL);
+    operand_push((aint) num_args, VAL);
     operand_push(old_ebp, VAL);
     g_stack.ebp_index = g_stack.stack_top_index;
     operand_push(ret_ip, POINTER);
-    operand_push(local_size, VAL);
+    operand_push((aint) local_size, VAL);
 
     for (int i = 0; i < local_size; i++) {
         operand_push(-1, VAL);
@@ -219,12 +219,12 @@ static aint end_function() {
     return ret_ip;
 }
 
-static void reverse_last_el(int el_count) {
+static void reverse_last_el(const int el_count) {
     if (el_count <= 1) {
         return;
     }
 
-    size_t have = STACK_SIZE - g_stack.stack_top_index;
+    const size_t have = STACK_SIZE - g_stack.stack_top_index;
     if ((size_t) el_count > have) {
         failure("reverse_last_el: not enough operands: need=%d have=%zu\n", el_count, have);
     }
@@ -285,13 +285,13 @@ static aint callc_function(const int arg_number) {
                     UNKNOWN);
     }
     operand_set(g_stack.stack_top_index, closure_val, POINTER);
-    const aint code_pntr = ((aint *) closure_data->contents)[0];
+    const aint code_pointer = ((aint *) closure_data->contents)[0];
     if (TAG(closure_data->data_header) != CLOSURE_TAG) {
         failure("Expected closure\n");
     }
 
 
-    return code_pntr;
+    return code_pointer;
 }
 
 /* The unpacked representation of bytecode file */
@@ -546,9 +546,9 @@ void disassemble(FILE *f, bytefile *bf) {
                         int pos = INT;
                         fprintf(f, "G(%d)", pos);
                         if (h == 4) {
-                            store_global(f, pos);
+                            store_global(pos);
                         } else if (h == 2) {
-                            load_global(f, pos);
+                            load_global(pos);
                         } else {
                             failure("G is not supported");
                         }
@@ -572,7 +572,7 @@ void disassemble(FILE *f, bytefile *bf) {
                         if (h == 4) {
                             store_arg(arg_number);
                         } else if (h == 2) {
-                            load_arg(f, arg_number);
+                            load_arg(arg_number);
                         } else {
                             failure("A is not supported");
                         }
@@ -625,7 +625,7 @@ void disassemble(FILE *f, bytefile *bf) {
                         int local_size = INT;
                         fprintf(f, "BEGIN\t%d ", num_args); // + CBEGIN
                         fprintf(f, "%d", local_size);
-                        begin_function(f, num_args, local_size);
+                        begin_function(num_args, local_size);
                         break;
                     }
 
@@ -638,7 +638,7 @@ void disassemble(FILE *f, bytefile *bf) {
                                 case 0: {
                                     int pos = INT;
                                     fprintf(f, "G(%d)", pos);
-                                    load_global(f, pos);
+                                    load_global(pos);
                                     break;
                                 }
                                 case 1: {
@@ -650,7 +650,7 @@ void disassemble(FILE *f, bytefile *bf) {
                                 case 2: {
                                     int pos = INT;
                                     fprintf(f, "A(%d)", pos);
-                                    load_arg(f, pos);
+                                    load_arg(pos);
                                     break;
                                 }
                                 case 3: {
@@ -713,8 +713,8 @@ void disassemble(FILE *f, bytefile *bf) {
 
                     case 9: {
                         fprintf(f, "FAIL\t%d", INT);
-                        failure("FAIL is not supported");
                         fprintf(f, "%d", INT);
+                        failure("FAIL");
                         break;
                     }
 
