@@ -299,6 +299,7 @@ typedef struct {
     char *string_ptr; /* A pointer to the beginning of the string table */
     int *public_ptr; /* A pointer to the beginning of publics table    */
     char *code_ptr; /* A pointer to the bytecode itself               */
+    char *code_end;
     int stringtab_size; /* The size (in bytes) of the string table        */
     int global_area_size; /* The size (in words) of global area             */
     int public_symbols_number; /* The number of public symbols                   */
@@ -307,7 +308,28 @@ typedef struct {
 
 /* Gets a string from a string table by an index */
 char *get_string(const bytefile *f, int pos) {
+    if (pos < 0 || pos > f->stringtab_size) {
+        failure("Incorrect string index: %d (size=%d)\n", pos, f->stringtab_size);
+    }
     return &f->string_ptr[pos];
+}
+
+static inline char get_byte(const bytefile *bf, char **ip) {
+    if (*ip + 1 > bf->code_end) {
+        failure("Instruction pointer %p out of bounds [%p, %p)",
+                (void *) *ip + 1, (void *) bf->code_ptr, (void *) bf->code_end);
+    }
+    return *(*ip)++;
+}
+
+
+static inline int get_int(const bytefile *bf, char **ip) {
+    if (*ip < bf->code_ptr || *ip + sizeof(int) > bf->code_end) {
+        failure("Instruction pointer %p out of bounds [%p, %p)",
+                (void *) *ip + sizeof(int), (void *) bf->code_ptr, (void *) bf->code_end);
+    }
+    *ip += sizeof(int);
+    return *(int *) (*ip - sizeof(int));
 }
 
 /* Gets a name for a public symbol */
@@ -362,21 +384,22 @@ bytefile *read_file(char *fname) {
         failure("Incorrect bytecode file: invalid string table size");
     }
     file->code_ptr = &file->string_ptr[file->stringtab_size];
+    file->code_end = file->code_ptr + (size - (file->stringtab_size + file->public_symbols_number * 2 * sizeof(int)));
 
     return file;
 }
 
 /* Disassembles the bytecode pool */
 void disassemble(FILE *f, bytefile *bf) {
-#define INT (ip += sizeof(int), *(int *)(ip - sizeof(int)))
-#define BYTE *ip++
-#define STRING get_string(bf, INT)
-#define FAIL failure("ERROR: invalid opcode %d-%d\n", h, l)
-
     char *ip = bf->code_ptr;
     char *ops[] = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
     char *pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
     char *lds[] = {"LD", "LDA", "ST"};
+
+#define INT get_int(bf, &ip)
+#define BYTE get_byte(bf, &ip)
+#define STRING get_string(bf, INT)
+#define FAIL failure("ERROR: invalid opcode %d-%d\n", h, l)
     do {
         char x = BYTE,
                 h = (x & 0xF0) >> 4,
@@ -480,6 +503,9 @@ void disassemble(FILE *f, bytefile *bf) {
                     case 5: {
                         aint jump_address = INT;
                         fprintf(f, "JMP\t0x%.8x", jump_address);
+                        if (bf->code_ptr + jump_address > bf->code_end) {
+                            failure("JMP target out of range: 0x%x\n", (unsigned) jump_address);
+                        }
                         ip = bf->code_ptr + jump_address;
                         break;
                     }
@@ -489,6 +515,9 @@ void disassemble(FILE *f, bytefile *bf) {
                         aint return_address = end_function();
                         if (return_address == 0) {
                             goto stop;
+                        }
+                        if ((char *) return_address < bf->code_ptr || (char *) return_address > bf->code_end) {
+                            failure("END return address out of range\n");
                         }
                         ip = (char *) return_address;
                         break;
@@ -603,6 +632,9 @@ void disassemble(FILE *f, bytefile *bf) {
                         aint cond = operand_top(VAL);
                         operand_pop();
                         if (cond == 0) {
+                            if (target < 0 || bf->code_ptr + target > bf->code_end) {
+                                failure("CJMPz target out of range: 0x%x\n", (unsigned) target);
+                            }
                             ip = bf->code_ptr + target;
                         }
                         break;
@@ -614,6 +646,9 @@ void disassemble(FILE *f, bytefile *bf) {
                         aint cond = operand_top(VAL);
                         operand_pop();
                         if (cond != 0) {
+                            if (target < 0 || bf->code_ptr + target > bf->code_end) {
+                                failure("CJMPnz target out of range: 0x%x\n", (unsigned) target);
+                            }
                             ip = bf->code_ptr + target;
                         }
                         break;
