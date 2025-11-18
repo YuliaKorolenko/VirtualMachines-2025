@@ -354,6 +354,9 @@ bytefile *read_file(char *fname) {
 
     fclose(f);
 
+    if (file->public_symbols_number < 0) {
+        failure("Incorrect bytecode file: negative public_symbols_number");
+    }
     file->string_ptr = &file->buffer[file->public_symbols_number * 2 * sizeof(int)];
     file->public_ptr = (int *) file->buffer;
     file->code_ptr = &file->string_ptr[file->stringtab_size];
