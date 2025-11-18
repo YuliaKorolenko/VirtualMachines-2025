@@ -370,6 +370,7 @@ static aint callc_function(const int arg_number) {
 
 /* The unpacked representation of bytecode file */
 typedef struct {
+    char *entry_ptr;
     char *string_ptr; /* A pointer to the beginning of the string table */
     int *public_ptr; /* A pointer to the beginning of publics table    */
     char *code_ptr; /* A pointer to the bytecode itself               */
@@ -465,7 +466,7 @@ bytefile *read_file(char *fname) {
 
 /* Disassembles the bytecode pool */
 void disassemble(FILE *f, bytefile *bf) {
-    char *ip = bf->code_ptr;
+    char *ip = bf->entry_ptr;
     static const char *const ops[] = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
     static const char *const pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
     static const char *const lds[] = {"LD", "LDA", "ST"};
@@ -976,8 +977,14 @@ void dump_file(FILE *f, bytefile *bf) {
     fprintf(f, "Number of public symbols: %d\n", bf->public_symbols_number);
     fprintf(f, "Public symbols          :\n");
 
-    for (i = 0; i < bf->public_symbols_number; i++)
-        fprintf(f, "   0x%.8x: %s\n", get_public_offset(bf, i), get_public_name(bf, i));
+    for (i = 0; i < bf->public_symbols_number; i++) {
+        const char* public_name = get_public_name(bf, i);
+        const int offset = get_public_offset(bf, i);
+        if (strcmp(public_name, "main") == 0) {
+            bf->entry_ptr = bf->code_ptr + offset;
+        }
+        fprintf(f, "   0x%.8x: %s\n", offset, public_name);
+    }
 
     fprintf(f, "Code:\n");
 
