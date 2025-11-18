@@ -392,9 +392,9 @@ bytefile *read_file(char *fname) {
 /* Disassembles the bytecode pool */
 void disassemble(FILE *f, bytefile *bf) {
     char *ip = bf->code_ptr;
-    char *ops[] = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
-    char *pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
-    char *lds[] = {"LD", "LDA", "ST"};
+    static const char* const ops[] = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
+    static const char* const pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
+    static const char* const lds[] = {"LD", "LDA", "ST"};
 
 #define INT get_int(bf, &ip)
 #define BYTE get_byte(bf, &ip)
