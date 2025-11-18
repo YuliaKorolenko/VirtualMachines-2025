@@ -359,6 +359,9 @@ bytefile *read_file(char *fname) {
     }
     file->string_ptr = &file->buffer[file->public_symbols_number * 2 * sizeof(int)];
     file->public_ptr = (int *) file->buffer;
+    if (file->stringtab_size < 0 || file->public_symbols_number * 2 * sizeof(int) + file->stringtab_size > size) {
+        failure("Incorrect bytecode file: invalid string table size");
+    }
     file->code_ptr = &file->string_ptr[file->stringtab_size];
     file->global_ptr = (int *) malloc(file->global_area_size * sizeof(int));
 
