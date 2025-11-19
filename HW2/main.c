@@ -3,19 +3,43 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include "runtime/runtime.h"
 #include "runtime/gc.h"
 
+extern size_t __gc_stack_top, __gc_stack_bottom;
 
 #define STACK_SIZE 20000
 
 typedef struct {
     aint operand_stack[STACK_SIZE];
-    aint stack_top_index; // points to next free slot
     aint ebp_index;
 } OperandStack;
 
-OperandStack g_stack = {.stack_top_index = STACK_SIZE, .ebp_index = 0};
+OperandStack g_stack = {.ebp_index = 0};
+
+
+static inline aint *SP_ptr(void) {
+    return (aint *) ((char *) __gc_stack_top + sizeof(size_t));
+}
+
+static inline size_t stack_top_index(void) {
+    return (size_t) (SP_ptr() - &g_stack.operand_stack[0]);
+}
+
+static inline void set_stack_top_index(size_t idx) {
+    gc_set_stack_top((size_t) &(g_stack.operand_stack[idx]));
+}
+
+void gc_get_stack_top_checked(size_t new_top) {
+    if (new_top >= __gc_stack_bottom) {
+        failure("operand stack underflow in pop operation\n");
+    }
+}
+
+void gc_stack_offset(int count) {
+    __gc_stack_top += count * sizeof(size_t);
+}
 
 typedef enum {
     VAL, // unboxed integer value
@@ -98,22 +122,21 @@ typedef enum LowOp {
 };
 
 static void operand_push(aint value, const ValueType type) {
-    if (g_stack.stack_top_index == 0) {
-        failure("operand stack overflow\n");
-    }
+    size_t idx = stack_top_index();
+    gc_get_stack_top_checked(__gc_stack_top - sizeof(aint));
 
     if (type == VAL) {
         value = BOX(value);
     }
-    g_stack.operand_stack[--g_stack.stack_top_index] = value;
-    gc_set_stack_top((size_t) &(g_stack.operand_stack[g_stack.stack_top_index]));
+    idx--;
+    g_stack.operand_stack[idx] = value;
+    gc_stack_offset(-1);
 }
 
 static aint operand_top(const ValueType type) {
-    if (g_stack.stack_top_index + 1 >= STACK_SIZE) {
-        failure("operand stack underflow in top operation\n");
-    }
-    aint result = g_stack.operand_stack[g_stack.stack_top_index];
+    size_t idx = stack_top_index();
+    gc_get_stack_top_checked(__gc_stack_top);
+    aint result = g_stack.operand_stack[idx];
     if (type == VAL) {
         result = UNBOX(result);
     }
@@ -121,11 +144,8 @@ static aint operand_top(const ValueType type) {
 }
 
 static void operand_pop(void) {
-    if (g_stack.stack_top_index + 1 >= STACK_SIZE) {
-        failure("operand stack underflow in pop operation\n");
-    }
-    g_stack.stack_top_index++;
-    gc_set_stack_top((size_t) &(g_stack.operand_stack[g_stack.stack_top_index]));
+    gc_get_stack_top_checked(__gc_stack_top + sizeof(aint));
+    gc_stack_offset(1);
 }
 
 
@@ -272,7 +292,7 @@ void begin_function(const size_t num_args, const size_t local_size) {
 
     operand_push((aint) num_args, VAL);
     operand_push(old_ebp, VAL);
-    g_stack.ebp_index = g_stack.stack_top_index;
+    g_stack.ebp_index = (aint) stack_top_index();
     operand_push(ret_ip, POINTER);
     operand_push((aint) local_size, VAL);
 
@@ -288,8 +308,7 @@ static aint end_function() {
     const aint old_ebp = operand_get(ebp, VAL);
     const aint num_args = operand_get(ebp + 1, VAL);
 
-    g_stack.stack_top_index = ebp + 3 + num_args;
-    gc_set_stack_top((size_t) &(g_stack.operand_stack[g_stack.stack_top_index]));
+    set_stack_top_index(ebp + 3 + num_args);
     g_stack.ebp_index = old_ebp;
     operand_push(stack_top, UNKNOWN);
 
@@ -301,11 +320,11 @@ static void reverse_last_el(const int el_count) {
         return;
     }
 
-    const size_t have = STACK_SIZE - g_stack.stack_top_index;
+    const size_t have = STACK_SIZE - stack_top_index();
     if ((size_t) el_count > have) {
         failure("reverse_last_el: not enough operands: need=%d have=%zu\n", el_count, have);
     }
-    aint *SP = &g_stack.operand_stack[g_stack.stack_top_index];
+    aint *SP = SP_ptr();
     for (int i = 0, j = el_count - 1; i < j; ++i, --j) {
         aint tmp = SP[i];
         SP[i] = SP[j];
@@ -319,11 +338,10 @@ static void barray_function(const int n) {
     }
 
     reverse_last_el(n);
-    aint *SP = &g_stack.operand_stack[g_stack.stack_top_index];
+    aint *SP = SP_ptr();
 
     const aint arr = (aint) Barray(SP, BOX(n));
-    g_stack.stack_top_index += n;
-    gc_set_stack_top((size_t) &(g_stack.operand_stack[g_stack.stack_top_index]));
+    gc_stack_offset(n);
     operand_push(arr, POINTER);
 }
 
@@ -332,27 +350,25 @@ static void sexp_function(char *tag, const int elem_size) {
     operand_push(hash_tag, VAL);
 
     reverse_last_el(elem_size + 1);
-    aint *SP = &g_stack.operand_stack[g_stack.stack_top_index];
+    aint *SP = SP_ptr();
     const aint result = (aint) Bsexp(SP, BOX(elem_size + 1));
-    g_stack.stack_top_index += elem_size + 1;
-    gc_set_stack_top((size_t) &(g_stack.operand_stack[g_stack.stack_top_index]));
+    gc_stack_offset(elem_size + 1);
     operand_push(result, POINTER);
 }
 
 static void closure_function(const int code_pointer, const int arg_number) {
     reverse_last_el(arg_number);
     operand_push(code_pointer, POINTER);
-    aint *SP = &g_stack.operand_stack[g_stack.stack_top_index];
+    aint *SP = SP_ptr();
     aint *closure = Bclosure(SP, BOX(arg_number));
 
-    g_stack.stack_top_index += arg_number + 1;
-    gc_set_stack_top((size_t) &(g_stack.operand_stack[g_stack.stack_top_index]));
+    gc_stack_offset(arg_number + 1);
     operand_push((aint) closure, POINTER);
 }
 
 
 static aint callc_function(const int arg_number) {
-    size_t closure_pos = g_stack.stack_top_index + arg_number;
+    size_t closure_pos = stack_top_index() + (size_t) arg_number;
     if (closure_pos >= STACK_SIZE)
         failure("CALLC: invalid stack layout\n");
 
@@ -360,11 +376,12 @@ static aint callc_function(const int arg_number) {
     data *closure_data = TO_DATA(closure_val);
 
     for (int i = arg_number - 1; i >= 0; --i) {
-        operand_set(g_stack.stack_top_index + i + 1,
-                    operand_get(g_stack.stack_top_index + i, UNKNOWN),
+        size_t base = stack_top_index();
+        operand_set(base + (size_t) i + 1,
+                    operand_get(base + (size_t) i, UNKNOWN),
                     UNKNOWN);
     }
-    operand_set(g_stack.stack_top_index, closure_val, POINTER);
+    operand_set(stack_top_index(), closure_val, POINTER);
     const aint code_pointer = ((aint *) closure_data->contents)[0];
     if (TAG(closure_data->data_header) != CLOSURE_TAG) {
         failure("Expected closure\n");
@@ -943,8 +960,7 @@ void disassemble(FILE *f, bytefile *bf) {
 
                     case RT_STRING:
                         fprintf(f, "CALL\tLstring");
-                        aint *SP = &g_stack.operand_stack[g_stack.stack_top_index];
-                        operand_push((aint) Lstring(SP), POINTER);
+                        operand_push((aint) Lstring(SP_ptr()), POINTER);
                         break;
 
                     case RT_BARRAY: {
@@ -977,15 +993,14 @@ void dump_file(FILE *f, bytefile *bf) {
     fprintf(f, "String table size       : %d\n", bf->stringtab_size);
     fprintf(f, "Global area size        : %d\n", bf->global_area_size);
     // Places reserved for global variables
-    g_stack.stack_top_index = STACK_SIZE - bf->global_area_size;
-    gc_set_stack_top((size_t) &(g_stack.operand_stack[g_stack.stack_top_index]));
+    set_stack_top_index((size_t) (STACK_SIZE - bf->global_area_size));
     operand_push(-1, VAL);
     operand_push(-1, VAL);
     fprintf(f, "Number of public symbols: %d\n", bf->public_symbols_number);
     fprintf(f, "Public symbols          :\n");
 
     for (i = 0; i < bf->public_symbols_number; i++) {
-        const char* public_name = get_public_name(bf, i);
+        const char *public_name = get_public_name(bf, i);
         const int offset = get_public_offset(bf, i);
         if (strcmp(public_name, "main") == 0) {
             bf->entry_ptr = bf->code_ptr + offset;
