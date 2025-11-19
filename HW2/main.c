@@ -30,7 +30,7 @@ static inline size_t stack_top_index(void) {
 }
 
 static inline void set_stack_top_index(size_t idx) {
-    gc_set_stack_top((size_t) &(g_stack.operand_stack[idx]));
+     __gc_stack_top = (size_t) &(g_stack.operand_stack[idx]) - sizeof(size_t);
 }
 
 void gc_get_stack_top_checked(const size_t new_top) {
@@ -43,7 +43,7 @@ void gc_get_stack_top_checked(const size_t new_top) {
 }
 
 void gc_stack_offset(int count) {
-    __gc_stack_top += count * sizeof(size_t);
+    __gc_stack_top += count * sizeof(aint);
 }
 
 typedef enum {
@@ -127,21 +127,17 @@ typedef enum LowOp {
 };
 
 static void operand_push(aint value, const ValueType type) {
-    size_t idx = stack_top_index();
     gc_get_stack_top_checked(__gc_stack_top - sizeof(aint));
-
     if (type == VAL) {
         value = BOX(value);
     }
-    idx--;
-    g_stack.operand_stack[idx] = value;
     gc_stack_offset(-1);
+    *SP_ptr() = value;
 }
 
 static aint operand_top(const ValueType type) {
-    size_t idx = stack_top_index();
     gc_get_stack_top_checked(__gc_stack_top);
-    aint result = g_stack.operand_stack[idx];
+    aint result = *SP_ptr();
     if (type == VAL) {
         result = UNBOX(result);
     }
@@ -1036,9 +1032,8 @@ void dump_file(FILE *f, bytefile *bf) {
 int main(int argc, char *argv[]) {
     // stack_top < stack_bottom
     __gc_init();
-    size_t stack_top = (size_t) &g_stack.operand_stack[0];
-    size_t stack_bottom = (size_t) &g_stack.operand_stack[STACK_SIZE];
-    set_stack(stack_top, stack_bottom);
+    __gc_stack_top= (size_t) &g_stack.operand_stack[0];
+    __gc_stack_bottom = (size_t) &g_stack.operand_stack[STACK_SIZE];
 
     bytefile *f = read_file(argv[1]);
     dump_file(stderr, f);
