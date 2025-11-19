@@ -33,9 +33,12 @@ static inline void set_stack_top_index(size_t idx) {
     gc_set_stack_top((size_t) &(g_stack.operand_stack[idx]));
 }
 
-void gc_get_stack_top_checked(size_t new_top) {
+void gc_get_stack_top_checked(const size_t new_top) {
+    if (new_top < (size_t) &(g_stack.operand_stack[0])) {
+        failure("stack overflow\n");
+    }
     if (new_top >= __gc_stack_bottom) {
-        failure("operand stack underflow in pop operation\n");
+        failure("stack underflow\n");
     }
 }
 
@@ -146,7 +149,7 @@ static aint operand_top(const ValueType type) {
 }
 
 static void operand_pop(void) {
-    gc_get_stack_top_checked(__gc_stack_top + sizeof(aint));
+    gc_get_stack_top_checked(__gc_stack_top);
     gc_stack_offset(1);
 }
 
@@ -206,6 +209,10 @@ static void load_closure(const size_t k) {
     const data *closure_data = TO_DATA(closure_pointer);
     if (TAG(closure_data->data_header) != CLOSURE_TAG) {
         failure("Expected closure in store_closure\n");
+    }
+    const aint len = LEN(closure_data->data_header);
+    if (k >= len) {
+        failure("closure index out of bounds: %zu (len=%zu)\n", k, len);
     }
     const aint res = ((aint *) closure_data->contents)[k + 1];
     operand_push(res, UNKNOWN);
@@ -415,7 +422,7 @@ const char *get_string(const bytefile *f, int pos) {
 }
 
 static inline char get_byte(const bytefile *bf, char **ip) {
-    if (*ip + 1 > bf->code_end) {
+    if (*ip < bf->code_ptr || *ip + 1 > bf->code_end) {
         failure("Instruction pointer %p out of bounds [%p, %p)",
                 (void *) *ip + 1, (void *) bf->code_ptr, (void *) bf->code_end);
     }
@@ -1013,7 +1020,7 @@ void dump_file(FILE *f, bytefile *bf) {
         DEBUG_LOG(f, "   0x%.8x: %s\n", offset, public_name);
     }
 
-    if (bf->entry_ptr >= bf->code_end || bf->entry_ptr == 0) {
+    if (bf->entry_ptr > bf->code_end || bf->entry_ptr == 0) {
         failure("Main function has wrong offset");
     }
 
