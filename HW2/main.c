@@ -1003,6 +1003,7 @@ void dump_file(FILE *f, bytefile *bf) {
     DEBUG_LOG(f, "Number of public symbols: %d\n", bf->public_symbols_number);
     DEBUG_LOG(f, "Public symbols          :\n");
 
+    bf->entry_ptr = 0;
     for (i = 0; i < bf->public_symbols_number; i++) {
         const char *public_name = get_public_name(bf, i);
         const int offset = get_public_offset(bf, i);
@@ -1010,6 +1011,10 @@ void dump_file(FILE *f, bytefile *bf) {
             bf->entry_ptr = bf->code_ptr + offset;
         }
         DEBUG_LOG(f, "   0x%.8x: %s\n", offset, public_name);
+    }
+
+    if (bf->entry_ptr >= bf->code_end || bf->entry_ptr == 0) {
+        failure("Main function has wrong offset");
     }
 
     DEBUG_LOG(f, "Code:\n");
