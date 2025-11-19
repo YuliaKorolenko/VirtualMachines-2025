@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "runtime/runtime.h"
 #include "runtime/gc.h"
+#include "runtime/debug.h"
 
 extern size_t __gc_stack_top, __gc_stack_bottom;
 
@@ -405,8 +406,8 @@ typedef struct {
 } bytefile;
 
 /* Gets a string from a string table by an index */
-char *get_string(const bytefile *f, int pos) {
-    if (pos < 0 || pos > f->stringtab_size) {
+const char *get_string(const bytefile *f, int pos) {
+    if (pos < 0 || pos >= f->stringtab_size) {
         failure("Incorrect string index: %d (size=%d)\n", pos, f->stringtab_size);
     }
     return &f->string_ptr[pos];
@@ -503,7 +504,7 @@ void disassemble(FILE *f, bytefile *bf) {
                 h = (x & 0xF0) >> 4,
                 l = x & 0x0F;
 
-        fprintf(f, "0x%.8x:\t", ip - bf->code_ptr - 1);
+        DEBUG_LOG(f, "0x%.8x:\t", ip - bf->code_ptr - 1);
 
         switch (h) {
             case OP_END:
@@ -511,7 +512,7 @@ void disassemble(FILE *f, bytefile *bf) {
 
             /* BINOP */
             case OP_BINOP:
-                fprintf(f, "BINOP\t%s", (l >= BINOP_ADD && l <= BINOP_OR) ? ops[l - 1] : "<invalid>"); {
+                DEBUG_LOG(f, "BINOP\t%s", (l >= BINOP_ADD && l <= BINOP_OR) ? ops[l - 1] : "<invalid>"); {
                     if (l < BINOP_ADD || l > BINOP_OR) { FAIL; }
                     aint right = operand_top(VAL);
                     operand_pop();
@@ -579,14 +580,14 @@ void disassemble(FILE *f, bytefile *bf) {
                 switch (l) {
                     case MI_CONST: {
                         int cnst = INT;
-                        fprintf(f, "CONST\t%d", cnst);
+                        DEBUG_LOG(f, "CONST\t%d", cnst);
                         operand_push(cnst, VAL);
                         break;
                     }
 
                     case MI_STRING: {
                         const char *s = STRING;
-                        fprintf(f, "STRING\t%s", s);
+                        DEBUG_LOG(f, "STRING\t%s", s);
                         aint res = (aint) Bstring((aint *) &s);
                         operand_push(res, POINTER);
                         break;
@@ -595,18 +596,18 @@ void disassemble(FILE *f, bytefile *bf) {
                     case MI_SEXP: {
                         char *tag = STRING;
                         int elem_size = INT;
-                        fprintf(f, "SEXP\t%s ", tag);
-                        fprintf(f, "%d", elem_size);
+                        DEBUG_LOG(f, "SEXP\t%s ", tag);
+                        DEBUG_LOG(f, "%d", elem_size);
                         sexp_function(tag, elem_size);
                         break;
                     }
 
                     case MI_STI:
-                        fprintf(f, "STI");
+                        DEBUG_LOG(f, "STI");
                         break;
 
                     case MI_STA: {
-                        fprintf(f, "STA");
+                        DEBUG_LOG(f, "STA");
                         const aint value = operand_top(UNKNOWN);
                         operand_pop();
                         const aint ind = operand_top(UNKNOWN);
@@ -620,7 +621,7 @@ void disassemble(FILE *f, bytefile *bf) {
 
                     case MI_JMP: {
                         aint jump_address = INT;
-                        fprintf(f, "JMP\t0x%.8x", jump_address);
+                        DEBUG_LOG(f, "JMP\t0x%.8x", jump_address);
                         if (bf->code_ptr + jump_address > bf->code_end) {
                             failure("JMP target out of range: 0x%x\n", (unsigned) jump_address);
                         }
@@ -629,7 +630,7 @@ void disassemble(FILE *f, bytefile *bf) {
                     }
 
                     case MI_END: {
-                        fprintf(f, "END\t");
+                        DEBUG_LOG(f, "END\t");
                         aint return_address = end_function();
                         if (return_address == 0) {
                             goto stop;
@@ -642,22 +643,22 @@ void disassemble(FILE *f, bytefile *bf) {
                     }
 
                     case MI_RET:
-                        fprintf(f, "RET");
+                        DEBUG_LOG(f, "RET");
                         break;
 
                     case MI_DROP:
-                        fprintf(f, "DROP");
+                        DEBUG_LOG(f, "DROP");
                         operand_pop();
                         break;
 
                     case MI_DUP: {
-                        fprintf(f, "DUP");
+                        DEBUG_LOG(f, "DUP");
                         operand_push(operand_top(UNKNOWN), UNKNOWN);
                         break;
                     }
 
                     case MI_SWAP: {
-                        fprintf(f, "SWAP");
+                        DEBUG_LOG(f, "SWAP");
                         aint a = operand_top(UNKNOWN);
                         operand_pop();
                         aint b = operand_top(UNKNOWN);
@@ -668,7 +669,7 @@ void disassemble(FILE *f, bytefile *bf) {
                     }
 
                     case MI_ELEM: {
-                        fprintf(f, "ELEM");
+                        DEBUG_LOG(f, "ELEM");
                         aint b = operand_top(VAL);
                         operand_pop();
                         aint a = operand_top(POINTER); // container
@@ -687,11 +688,11 @@ void disassemble(FILE *f, bytefile *bf) {
             case OP_LD:
             case OP_LDA:
             case OP_ST:
-                fprintf(f, "%s\t", lds[h - 2]);
+                DEBUG_LOG(f, "%s\t", lds[h - 2]);
                 switch (l) {
                     case LDS_G: {
                         int pos = INT;
-                        fprintf(f, "G(%d)", pos);
+                        DEBUG_LOG(f, "G(%d)", pos);
                         if (h == OP_ST) {
                             store_global(pos);
                         } else if (h == OP_LD) {
@@ -710,12 +711,12 @@ void disassemble(FILE *f, bytefile *bf) {
                         } else {
                             failure("L is not supported");
                         }
-                        fprintf(f, "L(%d)", l_number);
+                        DEBUG_LOG(f, "L(%d)", l_number);
                         break;
                     }
                     case LDS_A: {
                         int arg_number = INT;
-                        fprintf(f, "A(%d)", arg_number);
+                        DEBUG_LOG(f, "A(%d)", arg_number);
                         if (h == OP_ST) {
                             store_arg(arg_number);
                         } else if (h == OP_LD) {
@@ -727,7 +728,7 @@ void disassemble(FILE *f, bytefile *bf) {
                     }
                     case LDS_C: {
                         int num_args = INT;
-                        fprintf(f, "C(%d)", num_args);
+                        DEBUG_LOG(f, "C(%d)", num_args);
                         if (h == OP_ST) {
                             store_closure(num_args);
                         } else if (h == OP_LD) {
@@ -746,7 +747,7 @@ void disassemble(FILE *f, bytefile *bf) {
                 switch (l) {
                     case CTRL_CJMPZ: {
                         int target = INT;
-                        fprintf(f, "CJMPz\t0x%.8x", target);
+                        DEBUG_LOG(f, "CJMPz\t0x%.8x", target);
                         aint cond = operand_top(VAL);
                         operand_pop();
                         if (cond == 0) {
@@ -760,7 +761,7 @@ void disassemble(FILE *f, bytefile *bf) {
 
                     case CTRL_CJMPNZ: {
                         int target = INT;
-                        fprintf(f, "CJMPnz\t0x%.8x", target);
+                        DEBUG_LOG(f, "CJMPnz\t0x%.8x", target);
                         aint cond = operand_top(VAL);
                         operand_pop();
                         if (cond != 0) {
@@ -776,8 +777,8 @@ void disassemble(FILE *f, bytefile *bf) {
                     case CTRL_BEGIN: {
                         int num_args = INT;
                         int local_size = INT;
-                        fprintf(f, "BEGIN\t%d ", num_args); // + CBEGIN
-                        fprintf(f, "%d", local_size);
+                        DEBUG_LOG(f, "BEGIN\t%d ", num_args); // + CBEGIN
+                        DEBUG_LOG(f, "%d", local_size);
                         begin_function(num_args, local_size);
                         break;
                     }
@@ -785,30 +786,30 @@ void disassemble(FILE *f, bytefile *bf) {
                     case CTRL_CLOSURE: {
                         int code_pntr = INT;
                         int n = INT;
-                        fprintf(f, "CLOSURE\t0x%.8x ", code_pntr);
+                        DEBUG_LOG(f, "CLOSURE\t0x%.8x ", code_pntr);
                         for (int i = 0; i < n; i++) {
                             switch (BYTE) {
                                 case LDS_G: {
                                     int pos = INT;
-                                    fprintf(f, "G(%d)", pos);
+                                    DEBUG_LOG(f, "G(%d)", pos);
                                     load_global(pos);
                                     break;
                                 }
                                 case LDS_L: {
                                     int pos = INT;
-                                    fprintf(f, "L(%d)", pos);
+                                    DEBUG_LOG(f, "L(%d)", pos);
                                     load_local(pos);
                                     break;
                                 }
                                 case LDS_A: {
                                     int pos = INT;
-                                    fprintf(f, "A(%d)", pos);
+                                    DEBUG_LOG(f, "A(%d)", pos);
                                     load_arg(pos);
                                     break;
                                 }
                                 case LDS_C: {
                                     int pos = INT;
-                                    fprintf(f, "C(%d)", pos);
+                                    DEBUG_LOG(f, "C(%d)", pos);
                                     load_closure(pos);
                                     break;
                                 }
@@ -822,7 +823,7 @@ void disassemble(FILE *f, bytefile *bf) {
 
                     case CTRL_CALLC: {
                         int arg_number = INT;
-                        fprintf(f, "CALLC\t%d", arg_number);
+                        DEBUG_LOG(f, "CALLC\t%d", arg_number);
                         aint offset = callc_function(arg_number);
                         operand_push((aint) ip, POINTER);
                         ip = bf->code_ptr + offset;
@@ -832,10 +833,9 @@ void disassemble(FILE *f, bytefile *bf) {
                     case CTRL_CALL: {
                         int call_pos = INT;
                         int number_of_args = INT;
-                        fprintf(f, "CALL\t0x%.8x ", call_pos);
-                        fprintf(f, "%d", number_of_args);
+                        DEBUG_LOG(f, "CALL\t0x%.8x ", call_pos);
+                        DEBUG_LOG(f, "%d", number_of_args);
                         reverse_last_el(number_of_args);
-                        // fprintf(f, "IP in call\t0x%.8x ", ip - bf->code_ptr);
                         operand_push(0, VAL);
                         operand_push((aint) ip, POINTER);
                         ip = bf->code_ptr + call_pos;
@@ -845,8 +845,8 @@ void disassemble(FILE *f, bytefile *bf) {
                     case CTRL_TAG: {
                         char *tag = STRING;
                         int elem_size = INT;
-                        fprintf(f, "TAG\t%s ", tag);
-                        fprintf(f, "%d", elem_size);
+                        DEBUG_LOG(f, "TAG\t%s ", tag);
+                        DEBUG_LOG(f, "%d", elem_size);
                         aint sexp = operand_top(POINTER);
                         operand_pop();
                         aint res = Btag((void *) sexp, LtagHash(tag), BOX(elem_size));
@@ -857,7 +857,7 @@ void disassemble(FILE *f, bytefile *bf) {
 
                     case CTRL_ARRAY: {
                         int el_size = INT;
-                        fprintf(f, "ARRAY\t%d", el_size);
+                        DEBUG_LOG(f, "ARRAY\t%d", el_size);
 
                         aint arr = operand_top(POINTER);
                         operand_push(UNBOX(Barray_patt((void *) arr, BOX(el_size))), VAL);
@@ -865,23 +865,26 @@ void disassemble(FILE *f, bytefile *bf) {
                     }
 
                     case CTRL_FAIL: {
-                        fprintf(f, "FAIL\t%d", INT);
-                        fprintf(f, "%d", INT);
+                        aint x = INT;
+                        aint y = INT;
+                        DEBUG_LOG(f, "FAIL\t%d", x);
+                        DEBUG_LOG(f, "%d", y);
                         failure("FAIL");
                         break;
                     }
 
-                    case CTRL_LINE:
-                        fprintf(f, "LINE\t%d", INT);
+                    case CTRL_LINE: {
+                        aint x = INT;
+                        DEBUG_LOG(f, "LINE\t%d", x);
                         break;
-
+                    }
                     default:
                         FAIL;
                 }
                 break;
 
             case OP_PATT: {
-                fprintf(f, "PATT\t%s", pats[l]);
+                DEBUG_LOG(f, "PATT\t%s", pats[l]);
                 switch (l) {
                     case PATT_STRING: {
                         aint str = operand_top(POINTER);
@@ -938,20 +941,20 @@ void disassemble(FILE *f, bytefile *bf) {
             case OP_RT: {
                 switch (l) {
                     case RT_READ:
-                        fprintf(f, "CALL\tLread");
+                        DEBUG_LOG(f, "CALL\tLread");
                         aint in = Lread();
                         operand_push(UNBOX(in), VAL);
                         break;
 
                     case RT_WRITE: {
-                        fprintf(f, "CALL\tLwrite");
+                        DEBUG_LOG(f, "CALL\tLwrite");
                         aint out = operand_top(VAL);
                         Lwrite(BOX(out));
                         break;
                     }
 
                     case RT_LENGTH:
-                        fprintf(f, "CALL\tLlength");
+                        DEBUG_LOG(f, "CALL\tLlength");
                         aint out = operand_top(POINTER);
                         operand_pop();
                         aint res = Llength((void *) out);
@@ -959,13 +962,13 @@ void disassemble(FILE *f, bytefile *bf) {
                         break;
 
                     case RT_STRING:
-                        fprintf(f, "CALL\tLstring");
+                        DEBUG_LOG(f, "CALL\tLstring");
                         operand_push((aint) Lstring(SP_ptr()), POINTER);
                         break;
 
                     case RT_BARRAY: {
                         int size = INT;
-                        fprintf(f, "CALL\tBarray\t%d", size);
+                        DEBUG_LOG(f, "CALL\tBarray\t%d", size);
                         barray_function(size);
                         break;
                     }
@@ -980,24 +983,24 @@ void disassemble(FILE *f, bytefile *bf) {
                 FAIL;
         }
 
-        fprintf(f, "\n");
+        DEBUG_LOG(f, "\n");
     } while (1);
 stop:
-    fprintf(f, "<end>\n");
+    DEBUG_LOG(f, "<end>\n");
 }
 
 /* Dumps the contents of the file */
 void dump_file(FILE *f, bytefile *bf) {
     int i;
 
-    fprintf(f, "String table size       : %d\n", bf->stringtab_size);
-    fprintf(f, "Global area size        : %d\n", bf->global_area_size);
+    DEBUG_LOG(f, "String table size       : %d\n", bf->stringtab_size);
+    DEBUG_LOG(f, "Global area size        : %d\n", bf->global_area_size);
     // Places reserved for global variables
     set_stack_top_index((size_t) (STACK_SIZE - bf->global_area_size));
     operand_push(-1, VAL);
     operand_push(-1, VAL);
-    fprintf(f, "Number of public symbols: %d\n", bf->public_symbols_number);
-    fprintf(f, "Public symbols          :\n");
+    DEBUG_LOG(f, "Number of public symbols: %d\n", bf->public_symbols_number);
+    DEBUG_LOG(f, "Public symbols          :\n");
 
     for (i = 0; i < bf->public_symbols_number; i++) {
         const char *public_name = get_public_name(bf, i);
@@ -1005,10 +1008,10 @@ void dump_file(FILE *f, bytefile *bf) {
         if (strcmp(public_name, "main") == 0) {
             bf->entry_ptr = bf->code_ptr + offset;
         }
-        fprintf(f, "   0x%.8x: %s\n", offset, public_name);
+        DEBUG_LOG(f, "   0x%.8x: %s\n", offset, public_name);
     }
 
-    fprintf(f, "Code:\n");
+    DEBUG_LOG(f, "Code:\n");
 
     // closure for first begin
     operand_push(0, POINTER);
@@ -1017,17 +1020,8 @@ void dump_file(FILE *f, bytefile *bf) {
     disassemble(f, bf);
 }
 
-
-FILE *old_stderr;
-
-void disable_stderr() {
-    old_stderr = stderr;
-    stderr = fopen("/dev/null", "w");
-}
-
 int main(int argc, char *argv[]) {
     // stack_top < stack_bottom
-    disable_stderr();
     __gc_init();
     size_t stack_top = (size_t) &g_stack.operand_stack[0];
     size_t stack_bottom = (size_t) &g_stack.operand_stack[STACK_SIZE];
