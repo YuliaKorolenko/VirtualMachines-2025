@@ -106,6 +106,7 @@ static void operand_push(aint value, const ValueType type) {
         value = BOX(value);
     }
     g_stack.operand_stack[--g_stack.stack_top_index] = value;
+    gc_set_stack_top((size_t) &(g_stack.operand_stack[g_stack.stack_top_index]));
 }
 
 static aint operand_top(const ValueType type) {
@@ -124,6 +125,7 @@ static void operand_pop(void) {
         failure("operand stack underflow in pop operation\n");
     }
     g_stack.stack_top_index++;
+    gc_set_stack_top((size_t) &(g_stack.operand_stack[g_stack.stack_top_index]));
 }
 
 
@@ -287,6 +289,7 @@ static aint end_function() {
     const aint num_args = operand_get(ebp + 1, VAL);
 
     g_stack.stack_top_index = ebp + 3 + num_args;
+    gc_set_stack_top((size_t) &(g_stack.operand_stack[g_stack.stack_top_index]));
     g_stack.ebp_index = old_ebp;
     operand_push(stack_top, UNKNOWN);
 
@@ -320,6 +323,7 @@ static void barray_function(const int n) {
 
     const aint arr = (aint) Barray(SP, BOX(n));
     g_stack.stack_top_index += n;
+    gc_set_stack_top((size_t) &(g_stack.operand_stack[g_stack.stack_top_index]));
     operand_push(arr, POINTER);
 }
 
@@ -331,6 +335,7 @@ static void sexp_function(char *tag, const int elem_size) {
     aint *SP = &g_stack.operand_stack[g_stack.stack_top_index];
     const aint result = (aint) Bsexp(SP, BOX(elem_size + 1));
     g_stack.stack_top_index += elem_size + 1;
+    gc_set_stack_top((size_t) &(g_stack.operand_stack[g_stack.stack_top_index]));
     operand_push(result, POINTER);
 }
 
@@ -341,6 +346,7 @@ static void closure_function(const int code_pointer, const int arg_number) {
     aint *closure = Bclosure(SP, BOX(arg_number));
 
     g_stack.stack_top_index += arg_number + 1;
+    gc_set_stack_top((size_t) &(g_stack.operand_stack[g_stack.stack_top_index]));
     operand_push((aint) closure, POINTER);
 }
 
@@ -972,6 +978,7 @@ void dump_file(FILE *f, bytefile *bf) {
     fprintf(f, "Global area size        : %d\n", bf->global_area_size);
     // Places reserved for global variables
     g_stack.stack_top_index = STACK_SIZE - bf->global_area_size;
+    gc_set_stack_top((size_t) &(g_stack.operand_stack[g_stack.stack_top_index]));
     operand_push(-1, VAL);
     operand_push(-1, VAL);
     fprintf(f, "Number of public symbols: %d\n", bf->public_symbols_number);

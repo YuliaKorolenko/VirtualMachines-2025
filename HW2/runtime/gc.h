@@ -42,6 +42,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+void gc_set_stack_top(size_t stack_top);
+
 typedef enum { ARRAY, CLOSURE, STRING, SEXP } lama_type;
 
 typedef struct {

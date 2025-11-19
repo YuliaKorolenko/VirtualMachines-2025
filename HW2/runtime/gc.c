@@ -692,6 +692,10 @@ void set_stack (size_t stack_top, size_t stack_bottom) {
   __gc_stack_bottom = stack_bottom;
 }
 
+void gc_set_stack_top(size_t stack_top) {
+  __gc_stack_top = stack_top - sizeof(size_t);
+}
+
 
 /* Utility functions */
 
