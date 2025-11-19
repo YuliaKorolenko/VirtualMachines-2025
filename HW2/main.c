@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <sys/stat.h>
 #include "runtime/runtime.h"
 #include "runtime/gc.h"
 #include "runtime/debug.h"
@@ -454,12 +455,12 @@ bytefile *read_file(char *fname) {
         failure("%s\n", strerror(errno));
     }
 
+    struct stat st;
+    stat(fname, &st);
+    if (st.st_size > LONG_MAX)
+        failure("Bytecode file too large: %lld", st.st_size);
+
     const long size = ftell(f);
-
-    const long MAX_SIZE = 2LL * 1024 * 1024 * 1024;
-    if (size > MAX_SIZE)
-        failure("Bytecode file too large: %ld", size);
-
     file = (bytefile *) malloc(sizeof(int) * 4 + size);
 
     if (file == 0) {
