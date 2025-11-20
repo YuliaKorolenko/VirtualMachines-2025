@@ -692,7 +692,6 @@ void set_stack (size_t stack_top, size_t stack_bottom) {
   __gc_stack_bottom = stack_bottom;
 }
 
-
 /* Utility functions */
 
 size_t get_forward_address (void *obj) {

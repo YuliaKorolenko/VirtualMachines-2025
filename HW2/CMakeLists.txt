@@ -8,3 +8,5 @@ add_subdirectory(runtime)
 add_executable(HW2 main.c)
 
 target_link_libraries(HW2 PRIVATE runtime)
+
+target_compile_options(HW2 PRIVATE -O3)

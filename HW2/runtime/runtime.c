@@ -808,7 +808,7 @@ extern void *Bclosure (aint* args, aint bn) {
   ((void **)r->contents)[0] = (void*) args[0];
 
   for (int i = 0; i < n; i++) {
-    ((aint *)r->contents)[i + 1] = args[i + 1];
+    ((aint *)r->contents)[n - i] = args[i + 1];
   }
 
   for (aint i = n - 1; i >= 0; --i) {
@@ -833,7 +833,7 @@ extern void *Barray (aint* args, aint bn) {
   r = (data *)alloc_array(n);
 
   for (int i = 0; i < n; i++) {
-    ((aint *)r->contents)[i] = args[i];
+    ((aint *)r->contents)[n - 1 - i] = args[i];
   }
 
   for (aint i = n - 1; i >= 0; --i) {
@@ -864,10 +864,10 @@ extern void *Bsexp (aint* args, aint bn) {
   r->tag         = 0;
 
   for (int i = 0; i < fields_cnt; i++) {
-    ((auint *)r->contents)[i] = args[i];
+    ((auint *)r->contents)[i] = args[n - i - 1];
   }
 
-  r->tag = UNBOX(args[fields_cnt]);
+  r->tag = UNBOX(args[0]);
 
   for (aint i = fields_cnt - 1; i >= 0; --i) {
     pop_extra_root((void**)&args[i]);
