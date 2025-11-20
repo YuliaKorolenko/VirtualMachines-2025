@@ -11,7 +11,7 @@
 
 extern size_t __gc_stack_top, __gc_stack_bottom;
 
-#define STACK_SIZE 20000
+#define STACK_SIZE 1000000
 
 typedef struct {
     aint operand_stack[STACK_SIZE];
@@ -342,7 +342,6 @@ static void barray_function(const int n) {
         failure("Barray: invalid size %d\n", n);
     }
 
-    reverse_last_el(n);
     aint *SP = SP_ptr();
 
     const aint arr = (aint) Barray(SP, BOX(n));
@@ -354,7 +353,6 @@ static void sexp_function(char *tag, const int elem_size) {
     const aint hash_tag = UNBOX(LtagHash(tag));
     operand_push(hash_tag, VAL);
 
-    reverse_last_el(elem_size + 1);
     aint *SP = SP_ptr();
     const aint result = (aint) Bsexp(SP, BOX(elem_size + 1));
     gc_stack_offset(elem_size + 1);
@@ -362,7 +360,6 @@ static void sexp_function(char *tag, const int elem_size) {
 }
 
 static void closure_function(const int code_pointer, const int arg_number) {
-    reverse_last_el(arg_number);
     operand_push(code_pointer, POINTER);
     aint *SP = SP_ptr();
     aint *closure = Bclosure(SP, BOX(arg_number));
