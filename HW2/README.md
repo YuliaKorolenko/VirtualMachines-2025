@@ -1,7 +1,22 @@
-### Bytecode interpreter for Lama language
+## Bytecode interpreter for Lama language
+This project implements a bytecode interpreter for the Lama educational programming language.
 
+Lama specification: [lama-spec.pdf](https://github.com/PLTools/Lama/blob/1.30/lama-spec.pdf).
+Lama compiler: [PLTools/Lama](https://github.com/PLTools/Lama).
 
-#### Running Tests
+### Project structure
+The interpreter executes Lama stack-machine bytecode (`.bc` files).  
+The original Lama runtime and garbage collector are reused from the `runtime/` directory.
+
+```text
+main.c        program entry point
+vm.c          interpreter logic
+stack.c       operand stack and call frame logic
+bytefile.c    bytecode file loading and metadata
+runtime/      Lama runtime and garbage collector
+```
+
+### Running Tests
 
 Regression tests are located in the `regression` directory. 
 
@@ -11,7 +26,7 @@ Regression tests are located in the `regression` directory.
 
 Performance test is located in the `performance` directory.
 
-##### Run tests in CLion
+#### Run tests in CLion
 
 1. Open the `HW2` folder in CLion.
 2. Reload CMake project.
@@ -19,7 +34,7 @@ Performance test is located in the `performance` directory.
 4. Press the green button.
 
 
-##### Run tests manually
+#### Run tests manually
 
 To run the tests, first compile the project into an executable.
 
@@ -62,3 +77,8 @@ real 227.95
 [bytecode interpretation]
 real 263.48
 ```
+
+### Current limitations
+
+1. The interpreter follows the integer representation used by the original Lama runtime.
+2. The project currently supports x86-64 only. The bundled Lama runtime contains architecture-specific code and does not compile on arm64.
