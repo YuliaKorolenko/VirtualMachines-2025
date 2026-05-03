@@ -79,8 +79,8 @@ void bytefile_set_entry(bytefile *bf) {
         }
         DEBUG_LOG(f, "   0x%.8x: %s\n", offset, public_name);
     }
-    if (bf->entry_ptr > bf->code_end || bf->entry_ptr == 0) {
-        failure("Main function has wrong offset");
+    if (bf->entry_ptr == 0) {
+        failure("Main function not found");
     }
 }
 

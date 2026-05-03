@@ -278,6 +278,10 @@ static aint callc_function(const int arg_number) {
     aint closure_val = operand_get(closure_pos, POINTER);
     data *closure_data = TO_DATA(closure_val);
 
+    if (TAG(closure_data->data_header) != CLOSURE_TAG) {
+        failure("Expected closure\n");
+    }
+
     for (int i = arg_number - 1; i >= 0; --i) {
         size_t base = stack_top_index();
         operand_set(base + (size_t) i + 1,
@@ -286,10 +290,6 @@ static aint callc_function(const int arg_number) {
     }
     operand_set(stack_top_index(), closure_val, POINTER);
     const aint code_pointer = ((aint *) closure_data->contents)[0];
-    if (TAG(closure_data->data_header) != CLOSURE_TAG) {
-        failure("Expected closure\n");
-    }
-
 
     return code_pointer;
 }
@@ -444,7 +444,7 @@ void interpret(FILE *f, bytefile *bf) {
                     case MI_JMP: {
                         aint jump_address = INT;
                         DEBUG_LOG(f, "JMP\t0x%.8x", jump_address);
-                        if (bf->code_ptr + jump_address > bf->code_end) {
+                        if (jump_address < 0 || bf->code_ptr + jump_address >= bf->code_end) {
                             failure("JMP target out of range: 0x%x\n", (unsigned) jump_address);
                         }
                         ip = bf->code_ptr + jump_address;
@@ -573,7 +573,7 @@ void interpret(FILE *f, bytefile *bf) {
                         aint cond = operand_top(VAL);
                         operand_pop();
                         if (cond == 0) {
-                            if (target < 0 || bf->code_ptr + target > bf->code_end) {
+                            if (target < 0 || bf->code_ptr + target >= bf->code_end) {
                                 failure("CJMPz target out of range: 0x%x\n", (unsigned) target);
                             }
                             ip = bf->code_ptr + target;
@@ -587,7 +587,7 @@ void interpret(FILE *f, bytefile *bf) {
                         aint cond = operand_top(VAL);
                         operand_pop();
                         if (cond != 0) {
-                            if (target < 0 || bf->code_ptr + target > bf->code_end) {
+                            if (target < 0 || bf->code_ptr + target >= bf->code_end) {
                                 failure("CJMPnz target out of range: 0x%x\n", (unsigned) target);
                             }
                             ip = bf->code_ptr + target;
@@ -647,6 +647,9 @@ void interpret(FILE *f, bytefile *bf) {
                         int arg_number = INT;
                         DEBUG_LOG(f, "CALLC\t%d", arg_number);
                         aint offset = callc_function(arg_number);
+                        if (offset < 0 || bf->code_ptr + offset >= bf->code_end) {
+                            failure("CALLC target out of range: 0x%x\n", (unsigned) offset);
+                        }
                         operand_push((aint) ip, POINTER);
                         ip = bf->code_ptr + offset;
                         break;

@@ -13,7 +13,7 @@ typedef struct {
 
 OperandStack g_stack = {.ebp_index = 0};
 
-inline aint *SP_ptr(void) {
+aint *SP_ptr(void) {
     return (aint *) ((char *) __gc_stack_top + sizeof(size_t));
 }
 
@@ -25,11 +25,11 @@ void set_ebp_index(aint value) {
     g_stack.ebp_index = value;
 }
 
-inline size_t stack_top_index(void) {
+size_t stack_top_index(void) {
     return (size_t) (SP_ptr() - &g_stack.operand_stack[0]);
 }
 
-inline void set_stack_top_index(size_t idx) {
+void set_stack_top_index(size_t idx) {
     __gc_stack_top = (size_t) &(g_stack.operand_stack[idx]) - sizeof(size_t);
 }
 
