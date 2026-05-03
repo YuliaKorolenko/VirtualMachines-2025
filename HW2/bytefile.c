@@ -68,15 +68,8 @@ int get_public_offset(bytefile *f, int i) {
     return f->public_ptr[i * 2 + 1];
 }
 
-/* Dumps the contents of the file */
-void dump_file(FILE *f, bytefile *bf) {
+void bytefile_set_entry(bytefile *bf) {
     int i;
-
-    DEBUG_LOG(f, "String table size       : %d\n", bf->stringtab_size);
-    DEBUG_LOG(f, "Global area size        : %d\n", bf->global_area_size);
-    DEBUG_LOG(f, "Number of public symbols: %d\n", bf->public_symbols_number);
-    DEBUG_LOG(f, "Public symbols          :\n");
-
     bf->entry_ptr = 0;
     for (i = 0; i < bf->public_symbols_number; i++) {
         const char *public_name = get_public_name(bf, i);
@@ -86,10 +79,17 @@ void dump_file(FILE *f, bytefile *bf) {
         }
         DEBUG_LOG(f, "   0x%.8x: %s\n", offset, public_name);
     }
-
     if (bf->entry_ptr > bf->code_end || bf->entry_ptr == 0) {
         failure("Main function has wrong offset");
     }
+}
+
+/* Dumps the contents of the file */
+void dump_file(FILE *f, bytefile *bf) {
+    DEBUG_LOG(f, "String table size       : %d\n", bf->stringtab_size);
+    DEBUG_LOG(f, "Global area size        : %d\n", bf->global_area_size);
+    DEBUG_LOG(f, "Number of public symbols: %d\n", bf->public_symbols_number);
+    DEBUG_LOG(f, "Public symbols          :\n");
 
     DEBUG_LOG(f, "Code:\n");
 }

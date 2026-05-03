@@ -11,6 +11,7 @@ int main(int argc, char *argv[]) {
     __gc_init();
     bytefile *bf = read_file(argv[1]);
     dump_file(stderr, bf);
+    bytefile_set_entry(bf);
     stack_init(bf->global_area_size);
     interpret(stderr, bf);
     return 0;

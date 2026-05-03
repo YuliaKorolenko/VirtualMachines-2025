@@ -22,4 +22,6 @@ char *get_public_name(bytefile *f, int i);
 
 int get_public_offset(bytefile *f, int i);
 
+void bytefile_set_entry(bytefile *bf);
+
 void dump_file(FILE *f, bytefile *bf);
