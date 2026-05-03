@@ -1,7 +1,13 @@
 #!/bin/bash
 
+
+EXE="$1"
+
+if [ -z "$EXE" ]; then
+    EXE="./build/HW2"
+fi
+
 PERFORMANCE_DIR="./performance"
-EXE="./cmake-build-debug/hw2"
 SORT_LAMA="$PERFORMANCE_DIR/Sort.lama"
 SORT_BC="$PERFORMANCE_DIR/Sort.bc"
 SORT_INPUT="$PERFORMANCE_DIR/Sort.input"
