@@ -4,7 +4,7 @@ import glob
 
 
 regression_dir = "./regression"
-exe = "./cmake-build-debug/hw2"
+exe = "./cmake-build-debug/HW2"
 
 def clean_lines(text):
     lines = text.splitlines()

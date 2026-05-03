@@ -7,7 +7,7 @@ To run the tests, first compile the project into an executable.
 After building, the executable should be located at:
 
 ``
-./cmake-build-debug/hw2
+./cmake-build-debug/HW2
 ``
 
 Once the project is successfully compiled, run the test script:
@@ -31,7 +31,7 @@ Success rate: 100.00%
 
 After building, the executable should be located at:
 ``
-./cmake-build-debug/hw2
+./cmake-build-debug/HW2
 ``
 
 To run the performance tests, run the following command:

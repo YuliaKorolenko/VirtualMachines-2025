@@ -1,7 +1,7 @@
 #!/bin/bash
 
 PERFORMANCE_DIR="./performance"
-EXE="./cmake-build-debug/hw2"
+EXE="./cmake-build-debug/HW2"
 SORT_LAMA="$PERFORMANCE_DIR/Sort.lama"
 SORT_BC="$PERFORMANCE_DIR/Sort.bc"
 SORT_INPUT="$PERFORMANCE_DIR/Sort.input"
