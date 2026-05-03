@@ -81,4 +81,4 @@ real 263.48
 ### Current limitations
 
 1. The interpreter follows the integer representation used by the original Lama runtime.
-2. The project currently supports x86-64 only. The bundled Lama runtime contains architecture-specific code and does not compile on arm64.
+

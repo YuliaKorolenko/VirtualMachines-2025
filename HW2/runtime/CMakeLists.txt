@@ -1,10 +1,11 @@
 cmake_minimum_required(VERSION 3.15)
 
-add_library(runtime STATIC
+set(RUNTIME_SOURCES
         gc.c
         runtime.c
-        printf.S
 )
+
+add_library(runtime STATIC ${RUNTIME_SOURCES})
 
 set_target_properties(runtime PROPERTIES
         C_STANDARD 11
@@ -17,7 +18,6 @@ target_compile_options(runtime PRIVATE
 )
 
 if(APPLE)
-    target_compile_options(runtime PRIVATE -arch x86_64)
     set(CMAKE_C_COMPILER clang)
 endif()
 

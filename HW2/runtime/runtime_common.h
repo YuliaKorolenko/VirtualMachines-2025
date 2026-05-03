@@ -8,13 +8,17 @@
 //#define DEBUG_VERSION
 //#define FULL_INVARIANT_CHECKS
 
+#if defined(__x86_64__) || defined(__aarch64__) || defined(__arm64__) || defined(__ppc64__) || defined(__LP64__)
+#define LAMA_64BIT
+#endif
+
 #if defined(__x86_64__) || defined(__ppc64__)
 #define X86_64
 #endif
 
 typedef size_t ptrt;  // pointer type, because can hold a pointer on a corresponding platform
 
-#ifdef X86_64
+#ifdef LAMA_64BIT
 typedef int64_t aint;  // adaptive int
 typedef uint64_t auint;  // adaptive unsigned int
 #define PRIdAI PRId64
@@ -31,7 +35,7 @@ typedef uint32_t auint;  // adaptive unsigned int
 #define SEXP_TAG 0x00000005
 #define CLOSURE_TAG 0x00000007
 #define UNBOXED_TAG 0x00000009   // Not actually a data_header; used to return from LkindOf
-#ifdef X86_64
+#ifdef LAMA_64BIT
 #define LEN_MASK (UINT64_MAX^7)
 #else
 #define LEN_MASK (UINT32_MAX^7)

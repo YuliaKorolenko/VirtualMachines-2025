@@ -208,7 +208,7 @@ extern aint Llength (void *p) {
 }
 
 static char *chars = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'";
-#ifdef X86_64
+#ifdef LAMA_64BIT
 #define MAX_SEXP_TAGLEN 10
 #else
 #define MAX_SEXP_TAGLEN 5

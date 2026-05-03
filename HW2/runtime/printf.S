@@ -1,3 +1,5 @@
+#if defined(__x86_64__)
+
 #ifdef __linux__
 #define PREFIXED(name) name
 #elif defined(__APPLE__)
@@ -167,3 +169,5 @@ PREFIXED(Lfailure_continue):
 # restore return address
         pushq   %r14
         jmp     PREFIXED(failure)
+
+#endif // defined(__x86_64__)
