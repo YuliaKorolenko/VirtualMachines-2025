@@ -22,7 +22,7 @@ bytefile *read_file(char *fname) {
         failure("Bytecode file too large: %lld", st.st_size);
 
     const long size = ftell(f);
-    file = (bytefile *) malloc(sizeof(int) * 4 + size);
+    file = malloc(offsetof(bytefile, stringtab_size) + (size_t)size);
 
     if (file == 0) {
         failure("*** FAILURE: unable to allocate memory.\n");
