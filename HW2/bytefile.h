@@ -1,3 +1,6 @@
+#ifndef BYTEFILE_H
+#define BYTEFILE_H
+
 #include <stdio.h>
 /* Reads a binary bytecode file by name and unpacks it */
 /* The unpacked representation of bytecode file */
@@ -25,3 +28,5 @@ int get_public_offset(bytefile *f, int i);
 void bytefile_set_entry(bytefile *bf);
 
 void dump_file(FILE *f, bytefile *bf);
+
+#endif

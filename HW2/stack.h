@@ -1,3 +1,5 @@
+#ifndef STACK_H
+#define STACK_H
 
 #include "runtime_common.h"
 
@@ -32,3 +34,5 @@ aint operand_get(const size_t k, const ValueType type);
 void operand_set(const size_t k, aint value, const ValueType type);
 
 void stack_init(int bf_global_area_size);
+
+#endif
