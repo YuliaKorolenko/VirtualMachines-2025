@@ -21,7 +21,16 @@ time_and_report() {
     shift
     echo ""
     echo "[$label]"
-    (time -p "$@" > /dev/null) 2>&1 | grep real
+    local err
+    err=$(mktemp)
+    { time -p "$@" >/dev/null; } 2>"$err"
+    local rc=$?
+    grep '^real' "$err"
+    if [ "$rc" -ne 0 ]; then
+        echo "FAIL: [$label] exit=$rc" >&2
+        grep -vE '^(real|user|sys) ' "$err" >&2
+    fi
+    rm -f "$err"
 }
 
 time_and_report "lamac -i " lamac -i "$SORT_LAMA" < "$SORT_INPUT"

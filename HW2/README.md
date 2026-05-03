@@ -24,7 +24,7 @@ Regression tests are located in the `regression` directory.
 `.input` - input files for the tests
 `.t `- expected output files for the tests
 
-Performance test is located in the `performance` directory.
+Performance test is located in the `performance` directory. To run the performance tests, the Lama compiler must be installed.
 
 #### Run tests in CLion
 
