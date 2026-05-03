@@ -25,14 +25,6 @@ size_t cur_id = 0;
 static extra_roots_pool extra_roots;
 
 size_t __gc_stack_top = 0, __gc_stack_bottom = 0;
-#ifdef LAMA_ENV
-#ifdef __linux__
-extern const size_t __start_custom_data, __stop_custom_data;
-#elif defined(__APPLE__)
-extern const size_t __start_custom_data __asm("section$start$__DATA$custom_data");
-extern const size_t __stop_custom_data __asm("section$end$__DATA$custom_data");
-#endif
-#endif
 
 #ifdef DEBUG_VERSION
 memory_chunk heap;
@@ -264,9 +256,6 @@ void mark_phase (void) {
   fprintf(stderr, "scan_extra_roots has finished\n");
   fprintf(stderr, "scan_global_area has started\n");
 #endif
-#ifdef LAMA_ENV
-  scan_global_area();
-#endif
 #if defined(DEBUG_VERSION) && defined(DEBUG_PRINT)
   fprintf(stderr, "scan_global_area has finished\n");
   fprintf(stderr, "marking has finished\n");
@@ -360,10 +349,6 @@ void scan_and_fix_region_roots (memory_chunk *old_heap) {
     // skip this one since it was already fixed from scanning the stack
     if ((extra_roots.roots[i] >= (void **)__gc_stack_top
          && extra_roots.roots[i] < (void **)__gc_stack_bottom)
-#ifdef LAMA_ENV
-        || (extra_roots.roots[i] <= (void **)&__stop_custom_data
-            && extra_roots.roots[i] >= (void **)&__start_custom_data)
-#endif
     ) {
 #ifdef DEBUG_VERSION
       if (is_valid_heap_pointer((size_t *)ptr_value)) {
@@ -376,19 +361,6 @@ void scan_and_fix_region_roots (memory_chunk *old_heap) {
                 (void *)__gc_stack_bottom);
 #  endif
       }
-#  ifdef LAMA_ENV
-      else if ((extra_roots.roots[i] <= (void *)&__stop_custom_data
-                && extra_roots.roots[i] >= (void *)&__start_custom_data)) {
-        fprintf(
-            stderr,
-            "|\tskip extra root: %p (%p), since it points to Lama's static area stop=%p start=%p\n",
-            extra_roots.roots[i],
-            (void *)ptr_value,
-            (void *)&__stop_custom_data,
-            (void *)&__start_custom_data);
-        exit(1);
-      }
-#  endif
       else {
 #  ifdef DEBUG_PRINT
         fprintf(stderr,
@@ -465,10 +437,6 @@ void update_references (memory_chunk *old_heap) {
   // fix pointers from extra_roots
   scan_and_fix_region_roots(old_heap);
 
-#ifdef LAMA_ENV
-  assert((void *)&__stop_custom_data >= (void *)&__start_custom_data);
-  scan_and_fix_region(old_heap, (void *)&__start_custom_data, (void *)&__stop_custom_data);
-#endif
 #if defined(DEBUG_VERSION) && defined(DEBUG_PRINT)
   fprintf(stderr, "GC update_references finished\n");
 #endif
@@ -559,15 +527,6 @@ void scan_extra_roots (void) {
     mark(*extra_roots.roots[i]);
   }
 }
-
-#ifdef LAMA_ENV
-void scan_global_area (void) {
-  // __start_custom_data is pointing to beginning of global area, thus all dereferencings are safe
-  for (size_t *ptr = (size_t *)&__start_custom_data; ptr < (size_t *)&__stop_custom_data; ++ptr) {
-    mark(*(void **)ptr);
-  }
-}
-#endif
 
 extern void gc_test_and_mark_root (size_t **root) {
 #if defined(DEBUG_VERSION) && defined(DEBUG_PRINT)

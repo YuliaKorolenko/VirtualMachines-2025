@@ -75,10 +75,6 @@ void mark (void *obj);
 void mark_phase (void);
 // marks each pointer from extra roots
 void scan_extra_roots (void);
-#ifdef LAMA_ENV
-// marks each valid pointer from global area
-void scan_global_area (void);
-#endif
 // takes number of words that are required to be allocated somewhere on the heap
 void compact_phase (size_t additional_size);
 // specific for Lisp-2 algorithm

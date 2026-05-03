@@ -25,8 +25,6 @@ if(UNIX AND NOT APPLE)
     set(CMAKE_C_COMPILER gcc)
 endif()
 
-target_compile_definitions(runtime PRIVATE LAMA_ENV)
-
 target_include_directories(runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 set_source_files_properties(printf.S PROPERTIES
